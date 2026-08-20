@@ -325,6 +325,62 @@ output, and both are easy to repeat:
 Neither changes the audio, so the QA gate still reports **8/13** with the same
 CV and wrap figures — the loop search itself is unaffected.
 
+### The organ sounded a constant tone with no MIDI at all
+
+Recording the loaded organ with nothing sent to it produced a steady 932 Hz
+tone, RMS 0.0101, flat for as long as it ran, while GrandOrgue's own toolbar
+reported polyphony 0 and neither CC 123 nor CC 120 touched it.
+
+Bisected under a PulseAudio null sink, one variable per run:
+
+| Variant | Idle output |
+|---|---|
+| `-g`, no samples loaded | silence (RMS 0.000000) |
+| GrandOrgue's own demo organ, samples loaded | silence |
+| our organ, every staged sample zeroed | silence |
+| our organ, melody samples zeroed, drone intact | **the tone** |
+| our organ, `DefaultToEngaged=N` | silence |
+| our organ, drone rank padded to two pipes | silence |
+
+The cause is in `GOStop::IsForEffects`:
+
+```cpp
+/* if a stop only has 1 note, the note isn't actually controlled by a
+ * manual, but will be on if the stop is on and off if the stop is off */
+return (m_RankInfo.size() == 1 && m_RankInfo[0].Rank->GetPipeCount() == 1);
+```
+
+A one-rank, one-pipe stop is an **effects stop** — the zimbelstern case.
+`GOStop::SetKeyState` returns early for it, so the pipe sounds while the stop is
+engaged and the manual never gets a say. A droneless chamber has exactly one
+note, so the drone rank hit this exactly, and `DefaultToEngaged=Y` meant it
+sounded from the moment the organ loaded. Nothing in the MIDI vocabulary can
+stop it, because no key is involved: only GrandOrgue's own Panic resets it.
+
+The fix is to pad any rank below two pipes with a `DUMMY` entry, which
+`odfgen.py` now does. Two measurement traps are worth recording alongside it:
+
+- **The tone is not an octave high.** A naive FFT peak reads it as 932 Hz,
+  which looks like A#5 against an `A#4_loop.wav` filename. Every VCSL recorder
+  sample has its second harmonic 70–80 dB above its fundamental, so the peak
+  bin is the octave for the source file, the loop, and GrandOrgue's output
+  alike. This is the same trap §4 already documents; `dsp.detect_f0` seeded
+  from the nominal note returns 466.05 Hz and is right.
+- **Polyphony 0 is not evidence that nothing is sounding.** It counts keyed
+  pipes, and an effects stop has none.
+
+### Open: no MIDI note has yet produced sound
+
+Separately, with the effects-stop tone gone, sweeping every key the manual
+exposes produced silence — on GrandOrgue's own virtual input port and on
+`Midi Through` alike. The audio path is known good, since the effects stop drove
+it. `GOMidiReceiver::Load` reads `NumberOfMIDIEvents` with a default of 0, and a
+manual with no assigned event matches nothing, which fits: GrandOrgue expects a
+human to assign the manual's MIDI event once, and this organ's manual is
+`Displayed=N` so there is nothing to right-click. Writing an explicit `Note`
+event into the config's `[MidiInitial001]` did not take effect, and the cause is
+not yet established. Until it is, the app has never been heard.
+
 ---
 
 ## 8. GrandOrgue runtime control, and reverb

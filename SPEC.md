@@ -256,6 +256,13 @@ Pipe006PitchTuning=-6
 > rejection was measured. Spec and code disagree here, and the spec is the
 > authority — the generator has to move.
 
+**No rank may hold fewer than two pipes.** A stop whose single rank has exactly
+one pipe is an *effects* stop in GrandOrgue — `GOStop::IsForEffects` — and an
+effects stop sounds whenever it is engaged, ignoring the manual entirely. A
+droneless chamber has exactly one note, so the generator pads short ranks with a
+`DUMMY` pipe. Skipping this makes the drone sound from the moment the organ
+loads, with nothing in the MIDI vocabulary able to stop it (RESEARCH.md §7).
+
 The app **generates the `.organ` from the profile** (§7). Nobody hand-maintains
 ODFs.
 

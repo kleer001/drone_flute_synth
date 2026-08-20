@@ -36,6 +36,14 @@ from .profile import midi_of
 BASE_MIDI_NOTE = 36
 MAX_ACCESSIBLE_KEYS = 85
 
+# A stop whose single rank holds exactly one pipe is an *effects* stop in
+# GrandOrgue: `GOStop::IsForEffects` returns true, `SetKeyState` bails out, and
+# the pipe sounds for as long as the stop is engaged, ignoring the manual. A
+# droneless chamber has exactly one note, so without this the drone sounds from
+# the moment the organ loads and nothing -- not note-off, not CC 120/123 --
+# silences it. Padding the rank with a DUMMY pipe restores key control.
+MIN_PIPES_PER_RANK = 2
+
 # GOGUIHW1DisplayMetrics reads all of these with required=true. GrandOrgue
 # refuses to load an ODF that omits any one of them, even with no visible
 # panel, so a generator that wants to produce a loadable file must emit the
@@ -81,6 +89,11 @@ COMBINATION_KEYS = [
 ]
 
 
+def rank_pipe_count(chamber):
+    """Logical pipes in a chamber's rank, padded away from the effects case."""
+    return max(len(chamber.notes), MIN_PIPES_PER_RANK)
+
+
 def allocate_keys(profile):
     """Assign each chamber a disjoint run of MIDI keys.
 
@@ -94,7 +107,7 @@ def allocate_keys(profile):
         chamber = profile.chambers[name]
         notes = sorted(chamber.notes, key=midi_of)
         allocation[name] = {n: cursor + i for i, n in enumerate(notes)}
-        cursor += len(notes)
+        cursor += rank_pipe_count(chamber)
     span = cursor - BASE_MIDI_NOTE
     if span > MAX_ACCESSIBLE_KEYS:
         raise ValueError(
@@ -109,9 +122,10 @@ def sample_filename(chamber_name, note):
 
 def _emit_rank(lines, index, chamber, keys, windchest, sample_dir):
     notes = sorted(chamber.notes, key=midi_of)
+    pipes = rank_pipe_count(chamber)
     lines.append(f"[Rank{index:03d}]")
     lines.append(f"Name={chamber.name} chamber")
-    lines.append(f"NumberOfLogicalPipes={len(notes)}")
+    lines.append(f"NumberOfLogicalPipes={pipes}")
     lines.append(f"FirstMidiNoteNumber={keys[notes[0]]}")
     lines.append(f"WindchestGroup={windchest}")
     lines.append("HarmonicNumber=8")
@@ -133,6 +147,8 @@ def _emit_rank(lines, index, chamber, keys, windchest, sample_dir):
         # deviation from equal temperament.
         lines.append(f"Pipe{i:03d}PitchTuning={chamber.tuning_offset(note):g}")
         lines.append(f"Pipe{i:03d}LoopCrossfadeLength=20")
+    for i in range(len(notes) + 1, pipes + 1):
+        lines.append(f"Pipe{i:03d}=DUMMY")
     lines.append("")
 
 
@@ -144,7 +160,7 @@ def _emit_stop(lines, index, chamber, keys, rank_index):
     lines.append("NumberOfRanks=1")
     lines.append(f"Rank001={rank_index}")
     lines.append(f"FirstAccessiblePipeLogicalKeyNumber={first_logical}")
-    lines.append(f"NumberOfAccessiblePipes={len(notes)}")
+    lines.append(f"NumberOfAccessiblePipes={rank_pipe_count(chamber)}")
     # Both chambers sound from the first note; the app, not the console,
     # decides what plays.
     lines.append("DefaultToEngaged=Y")
@@ -155,7 +171,7 @@ def _emit_stop(lines, index, chamber, keys, rank_index):
 
 def build_odf(profile, allocation):
     names = sorted(profile.chambers)
-    total_keys = sum(len(v) for v in allocation.values())
+    total_keys = sum(rank_pipe_count(profile.chambers[n]) for n in names)
 
     lines = ["[Organ]",
              f"ChurchName={profile.display}",
