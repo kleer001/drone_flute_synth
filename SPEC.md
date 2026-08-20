@@ -1,4 +1,4 @@
-# Drone Flute Simulator — Specification (v0.4)
+# Drone Flute Simulator — Specification (v0.6)
 
 A Linux app that plays an endless, non-repeating performance on a **simulated
 drone flute** — a multi-chambered flute where one chamber holds a sustained root
@@ -108,15 +108,75 @@ sole authority on what is sounding, and must send all-notes-off on exit *and* on
 crash (install a signal handler and an `atexit` hook — a stuck drone is the worst
 possible failure mode of this app). Treat GrandOrgue as a write-only device.
 
+Write-only is a statement about **reading**. GrandOrgue does change at runtime —
+temperament, per-pipe voicing and reverb are all live in its own window — we
+simply have no channel to drive them and no way to observe them. §10.1 has the
+capability table and RESEARCH.md §7 the sources; both note that **Panic is
+MIDI-assignable**, which gives the stuck-drone path a second, independent lever.
+
+### Signal chain and reverb
+
+```
+  our app  --MIDI-->  GrandOrgue  --[built-in convolution reverb]-->  JACK  -->  speakers
+```
+
+Reverb is **not app code and not an extra process**: GrandOrgue ships a
+convolution reverb (File → Settings → Reverb), built on Fons Adriaensen's
+`zita-convolver` — the same engine an external `jconvolver` would use. Point it
+at an impulse response and the room happens inside the process we are already
+running.
+
+Three things about it are load-bearing rather than cosmetic:
+
+- **A dry sample set is the right input.** VCSL's close-recorded recorders (§6)
+  suit convolution; a wet sample set would double the room.
+- **Reverb length fights the breath model.** §5's whole argument is that the
+  drone *stops* when the player inhales. A cathedral tail of 5–6 s fills the
+  0.3–1.6 s inhale gap completely and erases the effect the breath model exists
+  to produce. Start around **1.5–2.5 s** and tune it against `inhale_s` by ear;
+  it is a parameter of the performance, not a preset to pick by taste.
+- **It does not rescue a bad loop.** Envelope pulsing (§6) is amplitude
+  modulation and survives convolution unchanged; the QA gate measures the dry
+  loop, which is correct. Reverb masks nothing the gate cares about.
+
+Settings are global rather than per-organ, and toggling reverb while notes sound
+stops them on Linux — so it is configured once, before the performance, which is
+exactly how §3 already treats GrandOrgue. If the built-in path disappoints, the
+external options are `zita-rev1` (algorithmic, no IR licensing question at all)
+and Dragonfly Reverb (LV2, four algorithms), both needing a plugin host and JACK
+wiring in the launch script. RESEARCH.md §7 has the evidence and its gaps.
+
 ---
 
 ## 4. ODF mapping
 
-Per chamber: a **Rank** containing *only the notes that chamber can physically
-sound* — a droneless chamber is one pipe; a 6-hole melody chamber is 8–13 pipes,
-not 61 — on its own **Windchest**, exposed as a **Stop**, with per-pipe
-`PitchTuning` carrying the §2 cents table, plus an **Enclosure** for dynamics.
-The app cannot play what the instrument can't.
+Per chamber: a **Rank** on its own **Windchest**, exposed as a **Stop**, with
+per-pipe `PitchTuning` carrying the §2 cents table, plus an **Enclosure** for
+dynamics. Only the notes the chamber can physically sound have samples — a
+droneless chamber has one; a 6-hole melody chamber has 8–13, not 61. The app
+cannot play what the instrument can't.
+
+**Keys are real MIDI note numbers, and retuning is on.** A pipe sits at the MIDI
+number of the note it actually sounds, and unplayable numbers in between are
+`DUMMY` pipes. The tempting alternative — packing pipes densely and treating the
+key as a scale-degree index — costs more than it saves: it forces
+`AcceptsRetuning=N`, because a stock temperament then implies retunes of well
+over 1800 cents and GrandOrgue rejects every pipe. Real-note mapping keeps
+implied retunes small, so `AcceptsRetuning=Y` holds and **GrandOrgue's own
+temperament switching works on our organ** — which is what makes intonation a
+live setting rather than a build-time one (§10.2).
+
+The profile's cents table lives in `PitchTuning`, which GrandOrgue treats as the
+organ's **original temperament**. That is the default and the interesting one.
+Selecting any of GrandOrgue's stock temperaments swaps our table for theirs,
+which has a consequence worth being blunt about:
+
+> A GrandOrgue temperament is **twelve offsets per octave**, repeating. By
+> construction it cannot express a stretched octave. If §2's non-2:1 octave
+> survives, it lives in `PitchTuning` and **only in the original temperament** —
+> switching to equal or just discards the very thing §2 argues is the point.
+> That is fine, and it is what makes the comparison interesting: the switch is
+> an A/B between the instrument's tuning and the arithmetic one.
 
 Illustrative shape of a generated two-chamber `.organ` (line-oriented INI-style):
 
@@ -130,29 +190,43 @@ NumberOfStops=2
 
 [Manual001]
 NumberOfStops=2
+Stop001=1
+Stop002=2
 FirstAccessibleKeyMIDINoteNumber=57      ; A3
-NumberOfAccessibleKeys=16
+NumberOfAccessibleKeys=16                ; A3..C5
 
 [Rank001]                                 ; DRONE chamber — one pipe
 NumberOfLogicalPipes=1
+FirstMidiNoteNumber=57                    ; A3
 WindchestGroup=1
+AcceptsRetuning=Y
 Pipe001=drone/A3_loop.wav
 Pipe001PitchTuning=-14                    ; cents, from the profile
 Pipe001LoopCrossfadeLength=20
 
-[Rank002]                                 ; MELODY chamber — only playable notes
-NumberOfLogicalPipes=8
+[Rank002]                                 ; MELODY chamber — real note numbers,
+NumberOfLogicalPipes=16                   ;   gaps filled with DUMMY
+FirstMidiNoteNumber=57
 WindchestGroup=2
-Pipe001=melody/A3.wav
+AcceptsRetuning=Y
+Pipe001=melody/A3.wav                     ; 57 A3
 Pipe001PitchTuning=0
-Pipe002=melody/C4.wav
-Pipe002PitchTuning=+12
-; ... one entry per physically available note
+Pipe002=DUMMY                             ; 58 — the instrument has no A#3
+Pipe003=DUMMY                             ; 59
+Pipe004=melody/C4.wav                     ; 60 C4
+Pipe004PitchTuning=+12
+Pipe005=DUMMY                             ; 61
+Pipe006=melody/D4.wav                     ; 62 D4
+Pipe006PitchTuning=-6
+; ... a sample where the instrument has a hole, DUMMY where it doesn't
 ```
 
 > **Verify attribute spelling against the ODF reference before coding** — this
 > block is structurally right but the exact key names are from secondary
-> sources. `ODFedit` and `GOODF` exist as working references. Spike S3.
+> sources, `DUMMY` and `FirstMidiNoteNumber` included. `ODFedit` and `GOODF`
+> exist as working references, and upstream's
+> `src/tests/testing/resources/minimal.organ` is the authority on which keys are
+> mandatory.
 
 The app **generates the `.organ` from the profile** (§7). Nobody hand-maintains
 ODFs.
@@ -340,10 +414,11 @@ path = "naf-double-drone-a/naf-double-drone-a.organ"
 
 ### Tonality
 - drone root, constrained to the drone chamber's available notes
-- concert reference: 440 / 432 / instrument's own
+- concert reference: 440 / 432 / instrument's own — **build-time**, see §10.2
 - mode: the **intersection** of requested scale and the melody chamber's physical
   notes — we never offer a note the instrument can't make
-- intonation: equal / just / **profile cents table** (default)
+- intonation: **profile cents table** (default) / equal / just — **live**, but
+  switched in GrandOrgue's window rather than ours (§10.2)
 - harmony-chamber interval on triples: root+5th / +4th / +3rd
 
 ### Tempo (breath)
@@ -409,13 +484,272 @@ One manual, one channel, chambers separated by Stop state.
 | CC 7 | master level |
 | Stop switching | select breath layer (`soft`/`normal`/`pushed`) |
 | CC 120 / 123 | all-sound-off / all-notes-off — sent on exit, signal, and crash |
+| GrandOrgue Panic | a MIDI event bound to GrandOrgue's own Panic, fired alongside CC 120/123 — resets its sound engine even if our note-offs were lost (§10.1) |
 
 MIDI note numbers are assigned by the ODF generator and written into the profile's
 generated manifest, so app and ODF never disagree about which key is which pipe.
 
 ---
 
-## 10. Module layout
+## 10. Control surface and web GUI
+
+A small local web page — sliders, pull-downs, radio buttons, and a **Submit**
+button. Changes do not apply as you make them. You edit a working copy, submit
+it, and the whole set lands together on the next breath boundary, with a
+countdown saying when.
+
+### 10.1 What GrandOrgue actually allows
+
+§3 says GrandOrgue is a **write-only device**, which is true about *reading* its
+state and was previously over-read as "nothing can change at runtime". Checked
+against the documentation, the picture is more useful:
+
+| Capability | Available at runtime? | Reachable from our app? |
+|---|---|---|
+| Notes, CC 11, CC 7, stop switching | yes | **yes** — MIDI (§9) |
+| Panic (all sound off) | yes | **yes** — MIDI-assignable since 3.15.0 |
+| Exit, Memory Set | yes | yes — MIDI-assignable |
+| Temperament switching | yes — "samples are retuned on the fly when playing" | **no** — GUI only, not MIDI-bindable |
+| Voicing: per-pipe amplitude, gain, tuning | yes — Organ Settings dialog, down to individual pipe | **no** — GUI only |
+| Reload a regenerated ODF | yes — File → Reload | **no** — menu/keyboard only |
+| Real-time pitch bend / MIDI Tuning Standard | no — declined upstream | no |
+
+Two consequences worth stating plainly:
+
+1. **Live retuning and revoicing exist, in GrandOrgue's own window.** We cannot
+   drive them, but the user already has that window open (§3). Hand-voicing by
+   ear is a legitimate workflow, not a workaround, and GrandOrgue's Save writes
+   the fine-tuning data to disk — so numbers arrived at by ear can be copied
+   back into the profile's cents table by hand, or read out of that file if it
+   ever gets tedious.
+2. **Panic is MIDI-assignable, so the panic path gets a second belt.** §3 calls
+   a stuck drone the worst failure mode; our handler can now fire GrandOrgue's
+   own Panic in addition to CC 120/123, which resets its sound engine even if
+   our note-offs were lost.
+
+Sources for this table are in RESEARCH.md §7.
+
+### 10.2 Three tiers of setting
+
+| Tier | Examples | How it changes |
+|---|---|---|
+| **Runtime, ours** | drone root, mode, harmony interval, breath, mood, level, run state | the GUI — submit, next breath |
+| **Runtime, GrandOrgue's** | intonation (temperament), per-pipe voicing, reverb | the user, in GrandOrgue's window; live, and invisible to us |
+| **Build-time** | concert reference, profile, which notes exist | regenerate the ODF, reload it in GrandOrgue, restart (§10.8) |
+
+§8 lists intonation and concert reference together as "controls". They are not
+the same kind of thing.
+
+**Intonation is live.** Because §4 maps keys to real note numbers and leaves
+`AcceptsRetuning=Y`, GrandOrgue's temperament selector works on our organ and
+retunes the loaded samples on the fly. The profile's cents table is the original
+temperament and the default; equal, just and the historical temperaments are one
+menu away. This is the app's most interesting setting and it costs us no code at
+all — the price is that it lives in GrandOrgue's window, because temperament is
+not MIDI-bindable (§10.1). Our page names it in the read-only block and points
+at GrandOrgue rather than pretending to own it.
+
+**Concert reference is not.** 440 / 432 / the instrument's own pitch is baked
+into `PitchTuning` when the ODF is generated. It is also the one place the two
+runtime tiers collide: switching to a non-original temperament is reported to
+retune the whole organ to a1 = 440 Hz, which would quietly undo a 432 profile.
+Unconfirmed, and the shape of the answer doesn't change the design — a 432
+instrument wants its own tuning anyway, which is the original temperament. If
+you are running 432, stay on Original.
+
+### 10.3 The seam
+
+The engine is headless and authoritative; the GUI is one client of a
+`Controller`:
+
+```
+stage(changes: dict) -> None            # edit the working copy; nothing sounds different
+submit()             -> submission_id   # validate the whole set, queue it atomically
+snapshot()           -> dict            # committed values, working copy, in-flight id, eta
+```
+
+`cli.py` drives the same `Controller`. The web server never touches the
+scheduler thread, the MIDI port, or the panic path.
+
+### 10.4 The submit model
+
+**Why a button and not live controls.** Not politeness about latency — a
+correctness requirement. Under per-control commits, changing mode and then root
+lets one breath run with a root that is not in the new mode. Submitting a set
+makes the change atomic: root, mode and mood land on the same breath or none of
+them do.
+
+Three states per control:
+
+| State | Meaning | Shown as |
+|---|---|---|
+| **committed** | what the performance is using | normal |
+| **dirty** | edited here, not submitted | marked, with a global *Revert* |
+| **in-flight** | submitted, waiting for the next breath | locked, with the countdown |
+
+- **Validation happens at submit**, server-side, over the whole set — which is
+  where §8's "we never offer a note the instrument can't make" finally has a
+  home. A root outside the mode's intersection is rejected, nothing applies, and
+  the page says which field failed. Per-control commits had nowhere to put a
+  cross-field rule.
+- **One `submission_id` per submit.** No per-control ids, and no superseding
+  rule to specify: a set is in flight or it isn't.
+- **Two exceptions bypass Submit entirely** — **master level** (CC 7) and
+  **Start/Stop**. They live in a separate transport strip that is visibly live,
+  so nobody hunts for a Submit button for the volume slider.
+- While a set is in flight the form is locked. A second submit is refused rather
+  than queued; there is at most one pending set.
+
+### 10.5 The countdown
+
+The wait is **exact, not estimated**. The engine drew this breath's length and
+the inhale gap from their distributions (§5) and knows when the breath started,
+so seconds-to-next-drain is arithmetic. `/state` carries `next_drain_in`; the
+page ticks locally and resyncs on each poll.
+
+> **Applies in 11 s** — then 10, 9, …
+
+Telling the user it will be a while is fine; pretending it is instant is not.
+Two rules:
+
+- If the countdown reaches zero and the set has not drained, **switch to an
+  indeterminate spinner**. That is the honest display when the truth is harder
+  to find than expected, and it should be rare enough to be worth logging.
+- Worst case is one breath plus an inhale gap — ~15.6 s at the §5 clamps.
+
+### 10.6 Transport: polled HTTP
+
+Python's stdlib `http.server.ThreadingHTTPServer` on a daemon thread, serving
+one static page. **No new dependencies** beyond the MIDI library.
+
+The page polls `GET /state` every 250 ms. Polling rather than SSE or websockets:
+the only live values are a countdown and an in-flight flag, loopback polling at
+4 Hz costs nothing, and an SSE stream under `ThreadingHTTPServer` pins a thread
+per open tab with reconnect logic to match.
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| `GET` | `/` | — | the single static page |
+| `GET` | `/state` | — | `{run_id, seed, breath_index, committed{}, in_flight, next_drain_in, readonly{}}` |
+| `POST` | `/submit` | full parameter set | `{submission_id}` or `{errors: {field: reason}}` |
+| `POST` | `/level` | `{value}` | `{ok}` — immediate, no submit |
+| `POST` | `/stop`, `/start` | — | `{ok}` — immediate |
+| `POST` | `/regenerate` | — | `{odf_path, reload_required: true}` (§10.8) |
+
+Reconciliation, now that the page holds a working copy:
+
+- Polls update the **committed baseline only**. A dirty field is never
+  overwritten by a poll.
+- If another tab submits while this one is dirty, the page shows *"settings
+  changed underneath you"* with a choice: keep editing, or discard and reload
+  the new baseline. Last submit wins; we do not merge.
+- `run_id` changing means the engine restarted — the page reloads rather than
+  showing stale values. A failed poll marks it disconnected and disables
+  everything.
+
+### 10.7 The controls
+
+Transport strip — live, no Submit:
+
+| Control | Widget | Values |
+|---|---|---|
+| Run | Start / Stop | — |
+| Master level | slider | 0–127 → CC 7 |
+| Panic | button | CC 120/123 + GrandOrgue's own Panic (§10.1) |
+
+Submit-gated panel:
+
+| Control | Widget | Values |
+|---|---|---|
+| Drone root | pull-down | drone chamber's available notes (§7) |
+| Mode | pull-down | scales ∩ playable notes (§8) |
+| Harmony interval | radio | 5th / 4th / 3rd — hidden unless the profile has a third chamber |
+| Mood preset | pull-down | the six §8 presets, plus *Custom* |
+| Mood weights | 8 sliders | ranges from the §8 table |
+| Breath mean / spread / inhale | 3 sliders | 3–14 s / 0–5 s / 0.3–1.6 s |
+| Pulse | radio off/on + BPM slider | off by default (§5) |
+| Seed | text + *Reseed* | — |
+
+Moving any mood weight switches the preset pull-down to *Custom*; choosing a
+preset overwrites all eight sliders. Both are working-copy edits — nothing
+sounds different until Submit.
+
+Read-only block: profile id, concert reference, `tuning_origin` (§7), ODF path,
+and a line saying that **intonation, voicing and reverb are switched in
+GrandOrgue's window** — live, but ours to name rather than to drive, so whatever
+this page last knew about them may be wrong.
+
+### 10.8 Regenerate and reload
+
+Build-time settings get an explicit, honest two-step. `POST /regenerate` writes
+a new `.organ` from the current profile and returns the path; the page then says:
+
+> **Regenerated ODF written.** Press **File → Reload** in GrandOrgue, then restart
+> the player. Sound stops while the sample set loads, and the drone will break.
+
+We cannot press it for them (§10.1). Reload is a between-performances action,
+never a control, and the page must say so rather than implying a seamless
+switch.
+
+### 10.9 Determinism — an amendment to §12 criterion 5
+
+Byte-identical replay from a seed alone cannot survive a GUI that changes
+parameters mid-run. The engine appends every **applied submission** to a JSONL
+session log as `{breath_index, submission_id, params{}}` — one entry per set,
+not per field. Criterion 5 becomes:
+
+> Two runs from the same seed **with no submissions** produce byte-identical
+> MIDI; a run with submissions reproduces byte-identically from seed + session
+> log.
+
+The log is written whether or not the GUI is running, so a CLI-only run replays
+by the same rule.
+
+### 10.10 Binding and access
+
+Default bind is `127.0.0.1:8737`. On loopback there is no authentication and
+none is needed — any local user could open the MIDI port directly.
+
+`--listen <addr>` for LAN access (a phone on the couch is a real use case for an
+endless player) **requires** `--token`, checked on every request including
+`/state`. Without the flag, no non-loopback interface is bound at all. The
+threat is modest but not zero: an open port here lets a stranger start an
+endless drone on someone's speakers.
+
+### 10.11 What the GUI must never do
+
+- **Own the lifecycle.** Closing the tab does not stop the performance.
+- **Sit in the panic path.** All-notes-off on exit, signal, and crash stays
+  engine-side (§3). A browser that never loads must not change failure
+  behaviour.
+- **Block the scheduler.** Server on its own thread, submissions crossing by
+  queue.
+- **Claim knowledge of GrandOrgue's state.** If the user switches temperament or
+  revoices a pipe in GrandOrgue's window, our display is wrong and cannot know
+  it. The read-only block says so.
+
+### 10.12 Acceptance criteria for the GUI
+
+1. Editing a control marks it dirty and changes nothing audible; Revert restores
+   the committed values.
+2. A submitted set applies entirely on one breath boundary, or not at all — no
+   breath ever runs with a partially applied set.
+3. A submission whose root is outside the selected mode is refused with a
+   named field, and nothing is applied.
+4. The countdown reaches zero within 250 ms of the set actually draining; if it
+   reaches zero first, the spinner appears.
+5. Closing the browser mid-performance changes nothing audible; reopening shows
+   current values.
+6. Killing the engine with the page open shows disconnected within 1 s and
+   disables all controls.
+7. Bound to loopback, no non-loopback interface accepts a connection. With
+   `--listen`, a request without the token is refused.
+8. Ten minutes of continuous polling with a page open shifts breath start times
+   by **< 5 ms** against a headless run of the same seed.
+
+---
+
+## 11. Module layout
 
 ```
 belvedere_drone/
@@ -428,11 +762,18 @@ belvedere_drone/
   melody.py       # weighted walk + phrase shaping (§8)
   moods.py        # the weights table
   midi_out.py     # ALSA/JACK port, panic handler
+  control.py      # Controller: stage()/submit()/snapshot(), session log (§10.3)
   cli.py          # v0 entry point
-  tui.py          # v1 Textual UI
+  web/            # v1 GUI (§10)
+    server.py     #   stdlib ThreadingHTTPServer: /state /submit /level /start /stop
+                  #   /regenerate, token auth
+    static/       #   index.html, app.js, style.css — one page, no build step
 ```
 
-## 11. Acceptance criteria
+No `tui.py`: one GUI, not two. The TUI's main advantage was costing only one
+dependency, and §10.5 gets that to zero.
+
+## 12. Acceptance criteria
 
 **v0 is done when:**
 1. A 10-minute continuous run produces no stuck notes and no MIDI buffer growth.
@@ -443,10 +784,12 @@ belvedere_drone/
 4. Measured output pitch of each pipe matches the profile's cents table within
    **±3 cents** (record GrandOrgue's output, run `dsp.detect_f0` seeded from the
    nominal note).
-5. Two runs with the same seed produce byte-identical MIDI streams.
+5. Two runs with the same seed **and no submissions** produce byte-identical
+   MIDI streams; a run with submissions reproduces byte-identically from
+   seed + session log (§10.9).
 6. No two consecutive breaths are identical in note sequence.
 
-## 12. Spikes, in order
+## 13. Spikes, in order
 
 | # | Spike | Decides |
 |---|---|---|
@@ -456,17 +799,17 @@ belvedere_drone/
 | S4 | Does a Rank respond to MIDI velocity? | Whether breath layers need Stop-switching |
 | S5 | Run LoopAuditioneer batch over the 13 VCSL sustains; score with the QA gate. | Retires the §6 risk — or reopens it |
 
-## 13. Phasing
+## 14. Phasing
 
 - **v0** — one profile (VCSL soprano recorder retuned), one mood, breath loop,
   drone + melody, JACK out, CLI. Proves the MIDI→GrandOrgue seam and the breath
   model.
-- **v1** — ODF generator from profiles, the three solid profiles (§14), 6 moods,
-  Textual TUI, seeded determinism.
+- **v1** — ODF generator from profiles, the three solid profiles (§15), 6 moods,
+  web GUI (§10), seeded determinism.
 - **v2** — sourced cents tables replacing estimates, remaining profiles, breath
   layers.
 
-## 14. Library — flutes, graded by evidence
+## 15. Library — flutes, graded by evidence
 
 | Profile | Configuration | Evidence |
 |---|---|---|
@@ -480,15 +823,16 @@ Ocarinas are **deferred** — out of scope, and the multi-chamber ones I found
 extend *range* rather than drone. VCSL's CC0 ocarinas wait for whenever that
 changes.
 
-## 15. Non-goals
+## 16. Non-goals
 
 Recording real instruments. Vibrato, bends, half-holing. File rendering or export
-(live only). Live blown input — that's
+(live only). Writing any audio effect: reverb is GrandOrgue's built-in
+convolution (§3), configured by the user, never a signal path of ours. Live blown input — that's
 [Smule's Ocarina](https://en.wikipedia.org/wiki/Ocarina_(app)), a different app.
 Ocarinas. Any claim of ethnographic authenticity beyond what `tuning_origin`
 records.
 
-## 16. Prior art
+## 17. Prior art
 
 Drone generators are plentiful and all synth-based, melody-free:
 [chromatone/drone](https://github.com/chromatone/drone) (tanpura/shruti),
@@ -502,7 +846,7 @@ Nothing found combines a **real-instrument drone-flute library at correct
 non-equal intonation** with a **breath-phrased generative melody** on Linux. The
 neighbours are drone-without-melody or melody-without-instrument.
 
-## 17. Open questions
+## 18. Open questions
 
 1. **Does the stretched octave survive S1?** If NAF octaves really aren't 2:1,
    §2 is the headline feature. If they are, GrandOrgue is merely convenient
@@ -511,4 +855,4 @@ neighbours are drone-without-melody or melody-without-instrument.
    fallback is synthesis, which trades one wrongness for another.
 3. **Do the European double flutes justify separate profiles**, or are dvojnice
    and kettősfurulya close enough to the NAF-double model to be presets of it?
-   Answering needs the native-language sourcing in §14.
+   Answering needs the native-language sourcing in §15.
