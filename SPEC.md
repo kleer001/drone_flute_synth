@@ -1,4 +1,4 @@
-# Drone Flute Simulator — Specification (v0.5)
+# Drone Flute Simulator — Specification (v0.6)
 
 A Linux app that plays an endless, non-repeating performance on a **simulated
 drone flute** — a multi-chambered flute where one chamber holds a sustained root
@@ -133,9 +133,8 @@ Three things about it are load-bearing rather than cosmetic:
 - **Reverb length fights the breath model.** §5's whole argument is that the
   drone *stops* when the player inhales. A cathedral tail of 5–6 s fills the
   0.3–1.6 s inhale gap completely and erases the effect the breath model exists
-  to produce. Prefer a room or chapel of roughly **1.5–2.5 s**. This is a
-  musical parameter coupled to `inhale_s`, not a preset to pick by taste —
-  spike S8.
+  to produce. Start around **1.5–2.5 s** and tune it against `inhale_s` by ear;
+  it is a parameter of the performance, not a preset to pick by taste.
 - **It does not rescue a bad loop.** Envelope pulsing (§6) is amplitude
   modulation and survives convolution unchanged; the QA gate measures the dry
   loop, which is correct. Reverb masks nothing the gate cares about.
@@ -151,11 +150,33 @@ wiring in the launch script. RESEARCH.md §7 has the evidence and its gaps.
 
 ## 4. ODF mapping
 
-Per chamber: a **Rank** containing *only the notes that chamber can physically
-sound* — a droneless chamber is one pipe; a 6-hole melody chamber is 8–13 pipes,
-not 61 — on its own **Windchest**, exposed as a **Stop**, with per-pipe
-`PitchTuning` carrying the §2 cents table, plus an **Enclosure** for dynamics.
-The app cannot play what the instrument can't.
+Per chamber: a **Rank** on its own **Windchest**, exposed as a **Stop**, with
+per-pipe `PitchTuning` carrying the §2 cents table, plus an **Enclosure** for
+dynamics. Only the notes the chamber can physically sound have samples — a
+droneless chamber has one; a 6-hole melody chamber has 8–13, not 61. The app
+cannot play what the instrument can't.
+
+**Keys are real MIDI note numbers, and retuning is on.** A pipe sits at the MIDI
+number of the note it actually sounds, and unplayable numbers in between are
+`DUMMY` pipes. The tempting alternative — packing pipes densely and treating the
+key as a scale-degree index — costs more than it saves: it forces
+`AcceptsRetuning=N`, because a stock temperament then implies retunes of well
+over 1800 cents and GrandOrgue rejects every pipe. Real-note mapping keeps
+implied retunes small, so `AcceptsRetuning=Y` holds and **GrandOrgue's own
+temperament switching works on our organ** — which is what makes intonation a
+live setting rather than a build-time one (§10.2).
+
+The profile's cents table lives in `PitchTuning`, which GrandOrgue treats as the
+organ's **original temperament**. That is the default and the interesting one.
+Selecting any of GrandOrgue's stock temperaments swaps our table for theirs,
+which has a consequence worth being blunt about:
+
+> A GrandOrgue temperament is **twelve offsets per octave**, repeating. By
+> construction it cannot express a stretched octave. If §2's non-2:1 octave
+> survives, it lives in `PitchTuning` and **only in the original temperament** —
+> switching to equal or just discards the very thing §2 argues is the point.
+> That is fine, and it is what makes the comparison interesting: the switch is
+> an A/B between the instrument's tuning and the arithmetic one.
 
 Illustrative shape of a generated two-chamber `.organ` (line-oriented INI-style):
 
@@ -169,29 +190,43 @@ NumberOfStops=2
 
 [Manual001]
 NumberOfStops=2
+Stop001=1
+Stop002=2
 FirstAccessibleKeyMIDINoteNumber=57      ; A3
-NumberOfAccessibleKeys=16
+NumberOfAccessibleKeys=16                ; A3..C5
 
 [Rank001]                                 ; DRONE chamber — one pipe
 NumberOfLogicalPipes=1
+FirstMidiNoteNumber=57                    ; A3
 WindchestGroup=1
+AcceptsRetuning=Y
 Pipe001=drone/A3_loop.wav
 Pipe001PitchTuning=-14                    ; cents, from the profile
 Pipe001LoopCrossfadeLength=20
 
-[Rank002]                                 ; MELODY chamber — only playable notes
-NumberOfLogicalPipes=8
+[Rank002]                                 ; MELODY chamber — real note numbers,
+NumberOfLogicalPipes=16                   ;   gaps filled with DUMMY
+FirstMidiNoteNumber=57
 WindchestGroup=2
-Pipe001=melody/A3.wav
+AcceptsRetuning=Y
+Pipe001=melody/A3.wav                     ; 57 A3
 Pipe001PitchTuning=0
-Pipe002=melody/C4.wav
-Pipe002PitchTuning=+12
-; ... one entry per physically available note
+Pipe002=DUMMY                             ; 58 — the instrument has no A#3
+Pipe003=DUMMY                             ; 59
+Pipe004=melody/C4.wav                     ; 60 C4
+Pipe004PitchTuning=+12
+Pipe005=DUMMY                             ; 61
+Pipe006=melody/D4.wav                     ; 62 D4
+Pipe006PitchTuning=-6
+; ... a sample where the instrument has a hole, DUMMY where it doesn't
 ```
 
 > **Verify attribute spelling against the ODF reference before coding** — this
 > block is structurally right but the exact key names are from secondary
-> sources. `ODFedit` and `GOODF` exist as working references. Spike S3.
+> sources, `DUMMY` and `FirstMidiNoteNumber` included. `ODFedit` and `GOODF`
+> exist as working references, and upstream's
+> `src/tests/testing/resources/minimal.organ` is the authority on which keys are
+> mandatory.
 
 The app **generates the `.organ` from the profile** (§7). Nobody hand-maintains
 ODFs.
@@ -382,12 +417,9 @@ path = "naf-double-drone-a/naf-double-drone-a.organ"
 - concert reference: 440 / 432 / instrument's own — **build-time**, see §10.2
 - mode: the **intersection** of requested scale and the melody chamber's physical
   notes — we never offer a note the instrument can't make
-- intonation: equal / just / **profile cents table** (default) — **build-time**
+- intonation: **profile cents table** (default) / equal / just — **live**, but
+  switched in GrandOrgue's window rather than ours (§10.2)
 - harmony-chamber interval on triples: root+5th / +4th / +3rd
-
-Concert reference and intonation are baked into per-pipe `PitchTuning` in the
-generated ODF (§4), and §3 forbids making GrandOrgue reload one. They are chosen
-at launch and fixed for the session; §10.2 has the split.
 
 ### Tempo (breath)
 breath length mean + spread; notes per breath; inhale gap mean + spread; optional
@@ -486,8 +518,10 @@ Two consequences worth stating plainly:
 
 1. **Live retuning and revoicing exist, in GrandOrgue's own window.** We cannot
    drive them, but the user already has that window open (§3). Hand-voicing by
-   ear is a legitimate workflow, not a workaround — see spike S7 for reading
-   those numbers back.
+   ear is a legitimate workflow, not a workaround, and GrandOrgue's Save writes
+   the fine-tuning data to disk — so numbers arrived at by ear can be copied
+   back into the profile's cents table by hand, or read out of that file if it
+   ever gets tedious.
 2. **Panic is MIDI-assignable, so the panic path gets a second belt.** §3 calls
    a stuck drone the worst failure mode; our handler can now fire GrandOrgue's
    own Panic in addition to CC 120/123, which resets its sound engine even if
@@ -499,17 +533,29 @@ Sources for this table are in RESEARCH.md §7.
 
 | Tier | Examples | How it changes |
 |---|---|---|
-| **Runtime** | drone root, mode, harmony interval, breath, mood, level, run state | the GUI's job — submit, next breath |
-| **Build-time** | concert reference, intonation table, profile, playable notes | regenerate ODF → user reloads in GrandOrgue → restart (§10.8) |
-| **GrandOrgue-side** | temperament, per-pipe voicing, reverb (§3) | the user, in GrandOrgue's window; we neither set nor see it |
+| **Runtime, ours** | drone root, mode, harmony interval, breath, mood, level, run state | the GUI — submit, next breath |
+| **Runtime, GrandOrgue's** | intonation (temperament), per-pipe voicing, reverb | the user, in GrandOrgue's window; live, and invisible to us |
+| **Build-time** | concert reference, profile, which notes exist | regenerate the ODF, reload it in GrandOrgue, restart (§10.8) |
 
-§8 lists concert reference and intonation among "controls" without saying which
-tier they are. They are build-time: both are baked into per-pipe `PitchTuning`
-in the generated ODF (§4). Whether that is a permanent property of the design or
-an artifact of using MIDI keys as scale-degree indices is **spike S6** — if the
-key mapping changed, GrandOrgue's temperament system could make intonation a
-runtime dropdown, which given §2 would be the most interesting control in the
-app.
+§8 lists intonation and concert reference together as "controls". They are not
+the same kind of thing.
+
+**Intonation is live.** Because §4 maps keys to real note numbers and leaves
+`AcceptsRetuning=Y`, GrandOrgue's temperament selector works on our organ and
+retunes the loaded samples on the fly. The profile's cents table is the original
+temperament and the default; equal, just and the historical temperaments are one
+menu away. This is the app's most interesting setting and it costs us no code at
+all — the price is that it lives in GrandOrgue's window, because temperament is
+not MIDI-bindable (§10.1). Our page names it in the read-only block and points
+at GrandOrgue rather than pretending to own it.
+
+**Concert reference is not.** 440 / 432 / the instrument's own pitch is baked
+into `PitchTuning` when the ODF is generated. It is also the one place the two
+runtime tiers collide: switching to a non-original temperament is reported to
+retune the whole organ to a1 = 440 Hz, which would quietly undo a 432 profile.
+Unconfirmed, and the shape of the answer doesn't change the design — a 432
+instrument wants its own tuning anyway, which is the original temperament. If
+you are running 432, stay on Original.
 
 ### 10.3 The seam
 
@@ -628,9 +674,10 @@ Moving any mood weight switches the preset pull-down to *Custom*; choosing a
 preset overwrites all eight sliders. Both are working-copy edits — nothing
 sounds different until Submit.
 
-Read-only block: profile id, concert reference, intonation origin
-(`tuning_origin` from §7), ODF path, and a line saying temperament, voicing and
-reverb belong to GrandOrgue and are not reflected here.
+Read-only block: profile id, concert reference, `tuning_origin` (§7), ODF path,
+and a line saying that **intonation, voicing and reverb are switched in
+GrandOrgue's window** — live, but ours to name rather than to drive, so whatever
+this page last knew about them may be wrong.
 
 ### 10.8 Regenerate and reload
 
@@ -751,9 +798,6 @@ dependency, and §10.5 gets that to zero.
 | S3 | Hand-write a minimal ODF: one Rank, one pipe, one looped WAV, audible. | Verifies §4 attribute names; smallest proof of the sample path |
 | S4 | Does a Rank respond to MIDI velocity? | Whether breath layers need Stop-switching |
 | S5 | Run LoopAuditioneer batch over the 13 VCSL sustains; score with the QA gate. | Retires the §6 risk — or reopens it |
-| S6 | **Can intonation be a runtime control?** Hand-write an ODF with real-note key mapping and `AcceptsRetuning=Y`, ship the profile's cents table as a custom temperament, and switch it live. Check whether a 12-offsets-per-octave temperament can express the table at all, and whether selecting a non-original temperament forces a=440 (reported, unverified — RESEARCH.md §7). | §10.2 — turns intonation from a build-time setting into the app's most interesting knob, or confirms it can't be |
-| S7 | **Voicing round-trip.** Hand-voice a pipe in GrandOrgue, Save, and read the fine-tuning data back off disk into the profile. | Whether ear-voicing can feed §2's cents table — a read channel that isn't MIDI |
-| S8 | **Reverb tail vs. breath gap.** Render the same passage through IRs of ~1 s, ~2.5 s and ~6 s; check whether the breath cutoff (§5) still reads. | The reverb length ceiling in §3 |
 
 ## 14. Phasing
 

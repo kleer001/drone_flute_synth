@@ -212,16 +212,23 @@ The help lists only **Panic, Exit and Memory Set** as application-level function
 with MIDI event assignment. Load, Open and Reload are not among them, so the
 regenerate-and-reload path in SPEC §10.8 needs a human.
 
-**Two design consequences.** Panic being a MIDI object gives the stuck-drone
-failure mode a second lever independent of our note-offs (SPEC §9). And the
-temperament engine means intonation *could* be a runtime control if the ODF
-opted into retuning — which our scale-degree key mapping currently forbids via
-`AcceptsRetuning=N` (see §7 of this file). That is SPEC spike S6.
+**Two design consequences, both taken.** Panic being a MIDI object gives the
+stuck-drone failure mode a second lever independent of our note-offs (SPEC §9).
+And the temperament engine makes intonation a runtime setting — so the ODF now
+maps keys to real MIDI note numbers and keeps `AcceptsRetuning=Y`, rather than
+packing pipes as scale-degree indices and being forced to `AcceptsRetuning=N`
+(SPEC §4). The profile's cents table becomes the organ's original temperament;
+GrandOrgue's stock temperaments are one menu away.
+
+The limit of that, and it is a real one: a GrandOrgue temperament is twelve
+offsets per octave, repeating, so it cannot express a stretched octave. If §2's
+non-2:1 octave holds, it survives only in the original temperament.
 
 > **Unverified, flagged.** A [report](https://github.com/GrandOrgue/grandorgue/issues/1351)
 > that selecting any non-original temperament retunes the whole organ to
-> a1 = 440 Hz came from a search summary, not the issue read at source. If true
-> it collides with the 432 option in SPEC §8. Confirm during S6.
+> a1 = 440 Hz came from a search summary, not the issue read at source. If true,
+> a 432 profile must stay on the original temperament — which is where its own
+> tuning lives anyway, so the design is the same either way.
 
 ### Reverb
 
@@ -256,7 +263,8 @@ question entirely and is the safe default if licensing stalls.
 
 **The finding that matters musically** is not which reverb but how long: SPEC §5
 builds the whole performance on the drone *stopping* for breath, and a 5–6 s
-cathedral tail fills the 0.3–1.6 s inhale gap and erases it. Spike S8.
+cathedral tail fills the 0.3–1.6 s inhale gap and erases it. Start at 1.5–2.5 s
+and trust your ears against `inhale_s`.
 
 ### External alternatives, if the built-in path disappoints
 
