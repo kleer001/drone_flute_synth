@@ -6,18 +6,18 @@ to **GrandOrgue** playing a purpose-built sample set; the app is the player,
 not the synth.
 
 **State: specification plus validated tooling. No application code exists yet.**
-`SPEC.md` §10 gives the intended module layout for the app; nothing under
+`SPEC.md` §11 gives the intended module layout for the app; nothing under
 `belvedere_drone/` has been written.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `SPEC.md` | The build specification — architecture, ODF mapping, breath model, controls, acceptance criteria, ordered spikes. The authority; when code and spec disagree, resolve it explicitly. |
+| `SPEC.md` | The build specification — architecture, ODF mapping, breath model, controls, web GUI, acceptance criteria, ordered spikes. The authority; when code and spec disagree, resolve it explicitly. |
 | `RESEARCH.md` | What was researched and measured, including the loop-authoring experiment log and what each failed variant taught. Read §4 before touching loop code. |
 | `tools/dsp.py` | Shared DSP helpers — sample loading, period-aware envelopes, seeded pitch detection |
 | `tools/analyze_samples.py` | Inventory a sample folder: format, usable steady state, pitch accuracy vs. nominal |
-| `tools/loop_qa.py` | Acceptance gate (SPEC §11 criterion 3). Exits non-zero on failure |
+| `tools/loop_qa.py` | Acceptance gate (SPEC §12 criterion 3). Exits non-zero on failure |
 | `tools/loopfind.py` | Reference loop finder. Superseded for production by LoopAuditioneer; kept as dependency-light documentation of the approach |
 
 `tools/` imports only numpy, scipy, and its own `dsp` module — no package
@@ -45,7 +45,7 @@ real sample folder and the pass count reported.
   pitch periods, and pitch detection must be seeded from the nominal note in
   the filename. Both have bitten this code before — see RESEARCH.md §4.
 - Thresholds live in one place: `loop_qa.py`'s defaults (`CV < 0.02`,
-  `wrap < 3.0`), matching SPEC §11. Do not fork a second set of numbers.
+  `wrap < 3.0`), matching SPEC §12. Do not fork a second set of numbers.
 - Sample audio is never committed. VCSL (CC0) is the source; `.gitignore`
   excludes `*.wav` deliberately.
 - Honesty gates in the profile format (SPEC §7): a field is marked "measured"

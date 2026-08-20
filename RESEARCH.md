@@ -173,7 +173,7 @@ non-equal intonation with breath-phrased generative melody on Linux.
 
 Multi-chambered flutes where one pipe drones are a real and widespread family
 ([double flute](https://en.wikipedia.org/wiki/Double_flute)). Evidence grading
-for each candidate profile is in SPEC.md §14. Summary of what needs work:
+for each candidate profile is in SPEC.md §15. Summary of what needs work:
 
 - **NAF-style double and triple** — well documented by current makers
   ([Singing Tree](https://singingtreeflutes.com/pages/about-our-flutes),

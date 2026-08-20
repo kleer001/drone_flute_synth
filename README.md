@@ -10,7 +10,7 @@ set; the app is the player, not the synth.
 
 | File | What it is |
 |---|---|
-| [`SPEC.md`](SPEC.md) | The build specification — architecture, ODF mapping, breath model, controls, acceptance criteria, ordered spikes |
+| [`SPEC.md`](SPEC.md) | The build specification — architecture, ODF mapping, breath model, controls, web GUI, acceptance criteria, ordered spikes |
 | [`RESEARCH.md`](RESEARCH.md) | What was researched and measured, including the loop-authoring experiment log and what each failed variant taught |
 | `tools/dsp.py` | Shared DSP helpers (sample loading, period-aware envelopes, seeded pitch detection) |
 | `tools/analyze_samples.py` | Inventory a sample folder: format, usable steady state, pitch accuracy vs. nominal |

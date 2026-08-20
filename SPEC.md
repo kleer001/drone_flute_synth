@@ -1,4 +1,4 @@
-# Drone Flute Simulator — Specification (v0.4)
+# Drone Flute Simulator — Specification (v0.5)
 
 A Linux app that plays an endless, non-repeating performance on a **simulated
 drone flute** — a multi-chambered flute where one chamber holds a sustained root
@@ -340,11 +340,15 @@ path = "naf-double-drone-a/naf-double-drone-a.organ"
 
 ### Tonality
 - drone root, constrained to the drone chamber's available notes
-- concert reference: 440 / 432 / instrument's own
+- concert reference: 440 / 432 / instrument's own — **build-time**, see §10.2
 - mode: the **intersection** of requested scale and the melody chamber's physical
   notes — we never offer a note the instrument can't make
-- intonation: equal / just / **profile cents table** (default)
+- intonation: equal / just / **profile cents table** (default) — **build-time**
 - harmony-chamber interval on triples: root+5th / +4th / +3rd
+
+Concert reference and intonation are baked into per-pipe `PitchTuning` in the
+generated ODF (§4), and §3 forbids making GrandOrgue reload one. They are chosen
+at launch and fixed for the session; §10.2 has the split.
 
 ### Tempo (breath)
 breath length mean + spread; notes per breath; inhale gap mean + spread; optional
@@ -415,7 +419,176 @@ generated manifest, so app and ODF never disagree about which key is which pipe.
 
 ---
 
-## 10. Module layout
+## 10. Control surface and web GUI
+
+A small local web page — sliders, pull-downs, radio buttons — over a headless
+engine. The only feedback it gives is a per-control **spinner meaning "you
+changed this, the performance hasn't picked it up yet"**, which stops when the
+change takes effect. No meters, no note display, no visualisation.
+
+### 10.1 Why so little feedback is the honest maximum
+
+§3 makes GrandOrgue a **write-only device** — we cannot query what is sounding.
+Any "now playing" display would be a display of our own intent dressed up as
+observation. So the page shows committed parameter values and nothing else. The
+pending spinner is the one piece of live state we genuinely own, because the
+engine knows exactly when it consumed a change.
+
+### 10.2 Runtime controls vs. build-time settings — a correction to §8
+
+§8 lists concert reference and intonation among "controls". **They are not
+runtime controls.** Both are baked into per-pipe `PitchTuning` in the generated
+`.organ` (§4), and §3 means we cannot make GrandOrgue reload an organ. The same
+applies to the instrument profile itself and to the set of playable notes.
+
+Changing any of those requires: regenerate the ODF → the user reloads it in
+GrandOrgue by hand → restart the app. That is a launch-time workflow, not a
+slider.
+
+**The GUI therefore exposes runtime controls only.** Build-time settings appear
+as read-only facts about the loaded organ, with a line saying they are fixed for
+this session. Choosing them stays in `cli.py` flags.
+
+| Setting | Where it lives |
+|---|---|
+| profile, concert reference, intonation table, playable notes | launch-time; ODF-baked; read-only in the GUI |
+| drone root, mode, harmony interval, breath, mood, level, run state | runtime; the GUI's job |
+
+### 10.3 The seam
+
+The engine is headless and authoritative; the GUI is one client of a
+`Controller` with two operations:
+
+```
+apply(param, value) -> change_id      # queue a change; never applies it inline
+snapshot()          -> dict           # committed values + pending change ids
+```
+
+`cli.py` drives the same `Controller`. The web server never touches the
+scheduler thread, the MIDI port, or the panic path.
+
+### 10.4 When a change counts as enacted
+
+This definition is the whole spinner contract, so it is stated exactly:
+
+> A change is **enacted** when the scheduler has begun a breath computed with the
+> new value. Not when it was received, not when it was queued.
+
+Mechanism: the engine holds `pending: {change_id: (param, value)}`. At the top of
+each breath cycle (§5) it drains `pending` into the live parameter set. Draining
+is the only place parameters change, which is what guarantees §5's rule that
+layer switches land on note boundaries.
+
+- A second change to the same parameter **replaces** the pending one. The
+  superseded `change_id` simply leaves `pending`, so its spinner stops too. The
+  page does not need to distinguish superseded from enacted.
+- Two exceptions apply immediately, with **no spinner**, because queueing them
+  for up to 14 s would be user-hostile: **master level** (CC 7) and **stop**.
+- Worst-case spinner duration is one breath plus an inhale gap — up to ~15.6 s
+  at the §5 clamps. The control's label says "applies at the next breath" so the
+  wait reads as designed rather than hung.
+
+### 10.5 Transport: polled HTTP, no websockets
+
+Python's stdlib `http.server.ThreadingHTTPServer` on a daemon thread, serving
+one static page. **No new dependencies** beyond the MIDI library.
+
+The page polls `GET /state` every 250 ms. Polling rather than SSE or websockets
+because the only thing being pushed is "is this id still pending", loopback
+polling at 4 Hz costs nothing, and an SSE stream under `ThreadingHTTPServer`
+pins one thread per open tab with reconnect logic to match. Nothing here needs
+it.
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| `GET` | `/` | — | the single static page |
+| `GET` | `/state` | — | `{run_id, seed, breath_index, committed{}, pending[], readonly{}}` |
+| `POST` | `/set` | `{param, value}` | `{change_id}` — issued only after the engine has queued it |
+| `POST` | `/stop` | — | `{ok}` — immediate; all-notes-off |
+| `POST` | `/start` | — | `{ok}` — immediate |
+
+Reconciliation rules for the page:
+
+- A control that is focused or has a pending change is **not** overwritten by a
+  poll. Everything else follows `/state`, so two open tabs converge within one
+  poll interval.
+- `run_id` is derived from the seed and start time. If it changes, the engine
+  restarted: the page reloads rather than showing stale values.
+- A failed poll marks the page disconnected and disables every control.
+
+### 10.6 The controls
+
+| Control | Widget | Values | Commit |
+|---|---|---|---|
+| Run | Start / Stop buttons | — | immediate |
+| Master level | slider | 0–127 → CC 7 | immediate |
+| Drone root | pull-down | drone chamber's available notes (§7) | next breath |
+| Mode | pull-down | scales ∩ playable notes (§8) | next breath |
+| Harmony interval | radio | 5th / 4th / 3rd — hidden unless the profile has a third chamber | next breath |
+| Mood preset | pull-down | the six §8 presets, plus *Custom* | next breath |
+| Mood weights | 8 sliders | ranges from the §8 table | next breath |
+| Breath mean / spread / inhale | 3 sliders | 3–14 s / 0–5 s / 0.3–1.6 s | next breath |
+| Pulse | radio off/on + BPM slider | off by default (§5) | next breath |
+| Seed | read-only text + *Reseed* button | — | next breath |
+
+Moving any mood weight switches the preset pull-down to *Custom*; choosing a
+preset overwrites all eight sliders. Read-only block above the controls: profile
+id, concert reference, intonation origin (`tuning_origin` from §7), ODF path.
+
+### 10.7 Determinism — an amendment to §12 criterion 5
+
+Byte-identical replay from a seed alone cannot survive a GUI that changes
+parameters mid-run. Resolution: the engine appends every **enacted** change to a
+JSONL session log as `{breath_index, param, value}`. Criterion 5 becomes:
+
+> Two runs from the same seed **with no control changes** produce byte-identical
+> MIDI; a run with control changes reproduces byte-identically from seed +
+> session log.
+
+The log is written whether or not the GUI is running, so a CLI-only run replays
+by the same rule.
+
+### 10.8 Binding and access
+
+Default bind is `127.0.0.1:8737`. On loopback there is no authentication and
+none is needed — any local user could open the MIDI port directly.
+
+`--listen <addr>` for LAN access (a phone on the couch is a real use case for an
+endless player) **requires** `--token`, checked on every request including
+`/state`. Without the flag, no non-loopback interface is bound at all. The
+threat is modest but not zero: an open port here lets a stranger start an
+endless drone on someone's speakers.
+
+### 10.9 What the GUI must never do
+
+- **Own the lifecycle.** Closing the tab does not stop the performance. The
+  engine is the process; the page is a window onto it.
+- **Sit in the panic path.** All-notes-off on exit, signal, and crash stays
+  engine-side (§3). A browser that never loads must not change failure
+  behaviour.
+- **Block the scheduler.** Server on its own thread, changes crossing by queue.
+- **Claim knowledge of GrandOrgue's state** (§10.1). If the user moves a stop in
+  GrandOrgue's own window, our display is wrong and cannot know it — the
+  read-only block says so.
+
+### 10.10 Acceptance criteria for the GUI
+
+1. Moving a control shows its spinner within 250 ms, and the spinner clears
+   within one poll interval of the change being drained.
+2. Superseding a pending change clears the earlier spinner without leaking a
+   `change_id` that never resolves.
+3. Closing the browser mid-performance changes nothing audible; reopening it
+   shows current values.
+4. Killing the engine with the page open shows disconnected within 1 s and
+   disables all controls.
+5. Bound to loopback, no non-loopback interface accepts a connection. With
+   `--listen`, a request without the token is refused.
+6. Ten minutes of continuous polling with a page open shifts breath start times
+   by **< 5 ms** against a headless run of the same seed.
+
+---
+
+## 11. Module layout
 
 ```
 belvedere_drone/
@@ -428,11 +601,17 @@ belvedere_drone/
   melody.py       # weighted walk + phrase shaping (§8)
   moods.py        # the weights table
   midi_out.py     # ALSA/JACK port, panic handler
+  control.py      # Controller: apply()/snapshot(), pending queue, session log (§10.3)
   cli.py          # v0 entry point
-  tui.py          # v1 Textual UI
+  web/            # v1 GUI (§10)
+    server.py     #   stdlib ThreadingHTTPServer: /state /set /start /stop, token auth
+    static/       #   index.html, app.js, style.css — one page, no build step
 ```
 
-## 11. Acceptance criteria
+No `tui.py`: one GUI, not two. The TUI's main advantage was costing only one
+dependency, and §10.5 gets that to zero.
+
+## 12. Acceptance criteria
 
 **v0 is done when:**
 1. A 10-minute continuous run produces no stuck notes and no MIDI buffer growth.
@@ -443,10 +622,12 @@ belvedere_drone/
 4. Measured output pitch of each pipe matches the profile's cents table within
    **±3 cents** (record GrandOrgue's output, run `dsp.detect_f0` seeded from the
    nominal note).
-5. Two runs with the same seed produce byte-identical MIDI streams.
+5. Two runs with the same seed **and no control changes** produce
+   byte-identical MIDI streams; a run with control changes reproduces
+   byte-identically from seed + session log (§10.7).
 6. No two consecutive breaths are identical in note sequence.
 
-## 12. Spikes, in order
+## 13. Spikes, in order
 
 | # | Spike | Decides |
 |---|---|---|
@@ -456,17 +637,17 @@ belvedere_drone/
 | S4 | Does a Rank respond to MIDI velocity? | Whether breath layers need Stop-switching |
 | S5 | Run LoopAuditioneer batch over the 13 VCSL sustains; score with the QA gate. | Retires the §6 risk — or reopens it |
 
-## 13. Phasing
+## 14. Phasing
 
 - **v0** — one profile (VCSL soprano recorder retuned), one mood, breath loop,
   drone + melody, JACK out, CLI. Proves the MIDI→GrandOrgue seam and the breath
   model.
-- **v1** — ODF generator from profiles, the three solid profiles (§14), 6 moods,
-  Textual TUI, seeded determinism.
+- **v1** — ODF generator from profiles, the three solid profiles (§15), 6 moods,
+  web GUI (§10), seeded determinism.
 - **v2** — sourced cents tables replacing estimates, remaining profiles, breath
   layers.
 
-## 14. Library — flutes, graded by evidence
+## 15. Library — flutes, graded by evidence
 
 | Profile | Configuration | Evidence |
 |---|---|---|
@@ -480,7 +661,7 @@ Ocarinas are **deferred** — out of scope, and the multi-chamber ones I found
 extend *range* rather than drone. VCSL's CC0 ocarinas wait for whenever that
 changes.
 
-## 15. Non-goals
+## 16. Non-goals
 
 Recording real instruments. Vibrato, bends, half-holing. File rendering or export
 (live only). Live blown input — that's
@@ -488,7 +669,7 @@ Recording real instruments. Vibrato, bends, half-holing. File rendering or expor
 Ocarinas. Any claim of ethnographic authenticity beyond what `tuning_origin`
 records.
 
-## 16. Prior art
+## 17. Prior art
 
 Drone generators are plentiful and all synth-based, melody-free:
 [chromatone/drone](https://github.com/chromatone/drone) (tanpura/shruti),
@@ -502,7 +683,7 @@ Nothing found combines a **real-instrument drone-flute library at correct
 non-equal intonation** with a **breath-phrased generative melody** on Linux. The
 neighbours are drone-without-melody or melody-without-instrument.
 
-## 17. Open questions
+## 18. Open questions
 
 1. **Does the stretched octave survive S1?** If NAF octaves really aren't 2:1,
    §2 is the headline feature. If they are, GrandOrgue is merely convenient
@@ -511,4 +692,4 @@ neighbours are drone-without-melody or melody-without-instrument.
    fallback is synthesis, which trades one wrongness for another.
 3. **Do the European double flutes justify separate profiles**, or are dvojnice
    and kettősfurulya close enough to the NAF-double model to be presets of it?
-   Answering needs the native-language sourcing in §14.
+   Answering needs the native-language sourcing in §15.
