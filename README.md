@@ -25,7 +25,13 @@ sources. Vibrato out of scope for the prototype. Live playback only.
 
 ## Setup
 
+Python 3 with numpy and scipy; nothing else. The tools run straight from a
+checkout — no package install.
+
 ```bash
+git clone https://github.com/kleer001/drone_flute_synth.git
+cd drone_flute_synth
+python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -60,3 +66,9 @@ Against VCSL's Baroque Soprano Recorder (13 sustain notes, 48 kHz stereo):
 
 See RESEARCH.md for how that number moved from 2/13 to 8/13 and what a
 measurement bug nearly hid.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Sample material referenced here comes from
+[VCSL](https://github.com/sgossner/VCSL) under CC0 and is not redistributed in
+this repo.

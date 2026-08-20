@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Sample working directories — audio is fetched, not committed
+samples/
+loops/
+*.wav
