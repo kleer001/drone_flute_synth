@@ -21,13 +21,17 @@ SEMITONE = {'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
             'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11}
 
 
-def nominal_hz(note, concert_a=440.0):
-    """'F#4' -> Hz. Raises on an unparseable note name."""
+def midi_of(note):
+    """'F#4' -> 66. Raises on an unparseable note name."""
     m = re.fullmatch(r'([A-G]#?)(-?\d)', note)
     if not m:
         raise ValueError(f"unparseable note name: {note!r}")
-    midi = (int(m.group(2)) + 1) * 12 + SEMITONE[m.group(1)]
-    return concert_a * 2 ** ((midi - 69) / 12)
+    return (int(m.group(2)) + 1) * 12 + SEMITONE[m.group(1)]
+
+
+def nominal_hz(note, concert_a=440.0):
+    """'F#4' -> Hz. Raises on an unparseable note name."""
+    return concert_a * 2 ** ((midi_of(note) - 69) / 12)
 
 
 def note_from_filename(path):

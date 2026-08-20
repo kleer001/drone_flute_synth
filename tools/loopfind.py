@@ -31,7 +31,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from dsp import (load_mono, note_from_filename, nominal_hz, detect_f0,
+from dsp import (load_mono, note_from_filename, nominal_hz, midi_of, detect_f0,
                  envelope_hop, rms_envelope, steady_region)
 
 
@@ -95,8 +95,13 @@ def build_loop(sig, sr, f0, guard_ms=12.0, lo_s=0.30, hi_s=3.0):
     return err, loop
 
 
-def write_wav_with_loop(path, sr, mono, loop_start, loop_end, midi_note=60):
-    """16-bit mono WAV carrying an `smpl` chunk, the format GrandOrgue reads."""
+def write_wav_with_loop(path, sr, mono, loop_start, loop_end, midi_note):
+    """16-bit mono WAV carrying an `smpl` chunk, the format GrandOrgue reads.
+
+    `midi_note` becomes `dwMIDIUnityNote`, which GrandOrgue reads back as the
+    sample's own recorded pitch. It must be the note actually played: a wrong
+    unity note silently shifts every auto-tuned pipe built from this file.
+    """
     pcm = np.clip(mono, -1, 1)
     raw = (pcm * 32767).astype('<i2').tobytes()
     fmt = struct.pack('<HHIIHH', 1, 1, sr, sr * 2, 2, 16)
@@ -133,11 +138,17 @@ def main():
             print(f"{note:5} no loop found")
             continue
         err, loop = built
-        # Emit the loop twice so the file has material either side of the
-        # loop points, as a real sample set would.
-        out = np.concatenate([loop, loop])
+        # Emit the loop three times and point the loop at the MIDDLE copy, so
+        # the file has real material on both sides of the loop points. The
+        # pre-roll is not decoration: GrandOrgue crossfades the loop against
+        # the samples *preceding* loop start, and with a loop starting at
+        # sample 0 it discards the loop entirely -- "the loop 1 is ignored:
+        # not enough samples for crossfade before it's start", then "No valid
+        # loops exist in the file", and the pipe fails to load.
+        out = np.tile(loop, 3)
         dst = os.path.join(args.out_dir, f"{note}_loop.wav")
-        write_wav_with_loop(dst, sr, out, 0, len(loop))
+        write_wav_with_loop(dst, sr, out, len(loop), 2 * len(loop),
+                            midi_of(note))
         print(f"{note:5} loop {len(loop)/sr:6.3f}s  seam_mismatch {err:.4f}  -> {os.path.basename(dst)}")
         made += 1
     print(f"\n{made} loops written to {args.out_dir}")
