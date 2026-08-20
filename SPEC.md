@@ -9,9 +9,10 @@ playing a purpose-built sample set; the app is the *player*, not the synth.
 samples and tunings come from freely-licensed online sources. Vibrato out of
 scope for the prototype. Live playback only; no file rendering.
 
-**Status:** §6 reports measured results from spikes run against real sample data
-using the tools in `tools/` (see `RESEARCH.md` for the full log). §2 contains
-unverified figures, flagged. Everything else is design.
+**Status:** all five spikes in §13 have been run; results are folded into the
+sections they decided and recorded in full in `RESEARCH.md` §7. §2 was rewritten
+as a result — its original figures did not survive. A v0 implementation exists
+under `belvedere_drone/` and its generated ODF loads in GrandOrgue 3.17.3.
 
 ---
 
@@ -37,10 +38,11 @@ It hands us the hard parts:
 **The constraint:** GrandOrgue tremulants are **amplitude-only**. Pitch-based
 tremulant has been an open feature request since Sept 2021, milestone 3.18.0, no
 implementation ([issue #709](https://github.com/GrandOrgue/grandorgue/issues/709)).
-Native MIDI pitch-bend handling appears absent — community reports say a bend
-wheel sends something GrandOrgue won't accept and needs remapping
-([Organ Forum](https://organforum.com/forums/forum/organ-building-repair-restoration/virtual-organs/762454-expression-not-working-in-grandorgue);
-forum-level, spike S2).
+Native MIDI pitch bend is **absent, confirmed in the source** (spike S2):
+`GOMidiEvent::MidiType` in GrandOrgue 3.17.3 enumerates note, aftertouch,
+control change, program change, RPN, NRPN and SysEx, and has no pitch-bend
+member at all — a bend message has no representation in the live MIDI path.
+Status `0xE0` appears only in the MIDI *file* reader.
 
 So: no vibrato, no breath-bends, no half-holing, no glissandi. **Accepted for the
 prototype.** Pitch is fixed per pipe at design time — which §2 turns from a
@@ -54,33 +56,50 @@ now — a clean MIDI boundary is abstraction enough.
 
 ## 2. The intonation argument (why this isn't just a sampler patch)
 
-A Native American–style flute is **not in equal temperament, and not by
-accident.** Step sizes come from tube acoustics and finger-hole placement, not
-arithmetic. Reported measurements put the first step (minor third) at roughly
-**280–330 cents** against 12-TET's 300; whole-tone steps at **185–220 cents**
-straddling the just 204; and the octave itself measuring **1150–1250 cents**,
-not 1200.
+**Revised after spike S1. The original version of this section claimed Native
+American flutes have a stretched octave of 1150–1250 cents and named specific
+step sizes. Those numbers could not be confirmed and the direction of the claim
+is contradicted by the sources that do exist.** The full source-by-source
+record is in RESEARCH.md §7; the short version:
 
-> **Provenance flag — read before relying on these numbers.** They come from a
-> search-engine summary of [flutetree.org](https://www.flutetree.org/nature/MythPentatonic.html),
-> which is **blocked by this environment's egress proxy** — I could not read the
-> page. Same for [Flutopedia](https://www.flutopedia.com/) (Clint Goss), the
-> standard reference, which cites systematic measurements by Richard Payne. The
-> *shape* of the claim — NAF tuning departs materially from 12-TET — is
-> corroborated across independent maker and teaching sources
-> ([Prana](https://www.pranaflutes.com/professional-tuning/),
-> [ATFlutes](https://atflutes.com/information/learning/native-american-style-flute-tuning)).
-> **Treat the specific cents values as unverified.** Spike S1.
+- Flutopedia — the standard reference — gives NAF scale steps in **integer
+  semitones**, not cents, and states no octave size.
+- The acoustics paper Flutopedia hosts (Prairie 2006) uses 12-TET as its
+  reference grid and treats octave deviation as a **defect to be engineered
+  out**: a cylindrical flute plays its second register flat, and the maker's job
+  is to correct it.
+- Maker sources describe tuning in equal temperament, or offer **just
+  intonation** as a deliberate alternative on request.
+- The specific cents figures appear only in search-engine AI summaries, word
+  for word across differently-worded queries, and on no primary page.
 
-If the stretched octave is real it matters enormously: a conventional sampler
-pitch-shifting one recording across a range **cannot represent an instrument
-whose octave isn't 2:1**. GrandOrgue can, exactly, because every pipe is an
-independent sample with its own `PitchTuning`. That is the strongest technical
-reason to use it here, and the §1 constraint doesn't touch it.
+**So the octave is 2:1.** SPEC §18 question 1 asked what happens if it is, and
+answered itself: "GrandOrgue is merely convenient rather than uniquely right,
+and the project is less interesting." That is the honest outcome. GrandOrgue's
+per-pipe `PitchTuning` is still the right mechanism — exact, one sample per
+note, no resampling — but a 2:1-octave scale is also expressible as a
+twelve-entry temperament, which many samplers support. The architecture does
+not change; the *claim* does.
 
-**Design consequence:** the profile's cents table is the primary artifact. Right
-table with a mediocre sample still sounds like the instrument; wrong table with a
-perfect sample sounds like a MIDI flute.
+**What survives, and is worth building.** A drone flute has a real acoustic
+reason to want non-equal intonation that a melody-only instrument does not:
+every melody note sounds against a fixed, continuously-held root, so the
+beating of a tempered third or seventh is exposed. Just intonation removes it.
+That is a defensible, sourced, audible reason for a non-equal cents table —
+[Southern Cross Flutes](https://www.southerncrossflutes.com/natural-tuning-vs-equal-temperament/)
+tune drone flutes this way on request — and it is what the shipped profile uses,
+recorded as `tuning_origin = "maker-spec"`.
+
+A GrandOrgue temperament is twelve offsets indexed by pitch class
+(`GOTemperamentCent::m_Tuning[12]`), so it is octave-periodic by construction
+and could not express a stretched octave even if one turned up later. Per-pipe
+`PitchTuning` can. That is why the cents table lives in the ODF and not in a
+temperament file, and it keeps the door open at zero cost.
+
+**Design consequence, unchanged:** the profile's cents table is the primary
+artifact. Right table with a mediocre sample still sounds like the instrument;
+wrong table with a perfect sample sounds like a MIDI flute. What changed is
+that the table must now say honestly where it came from, which §7 enforces.
 
 ---
 
@@ -111,7 +130,7 @@ possible failure mode of this app). Treat GrandOrgue as a write-only device.
 Write-only is a statement about **reading**. GrandOrgue does change at runtime —
 temperament, per-pipe voicing and reverb are all live in its own window — we
 simply have no channel to drive them and no way to observe them. §10.1 has the
-capability table and RESEARCH.md §7 the sources; both note that **Panic is
+capability table and RESEARCH.md §8 the sources; both note that **Panic is
 MIDI-assignable**, which gives the stuck-drone path a second, independent lever.
 
 ### Signal chain and reverb
@@ -144,7 +163,7 @@ stops them on Linux — so it is configured once, before the performance, which 
 exactly how §3 already treats GrandOrgue. If the built-in path disappoints, the
 external options are `zita-rev1` (algorithmic, no IR licensing question at all)
 and Dragonfly Reverb (LV2, four algorithms), both needing a plugin host and JACK
-wiring in the launch script. RESEARCH.md §7 has the evidence and its gaps.
+wiring in the launch script. RESEARCH.md §8 has the evidence and its gaps.
 
 ---
 
@@ -221,12 +240,21 @@ Pipe006PitchTuning=-6
 ; ... a sample where the instrument has a hole, DUMMY where it doesn't
 ```
 
-> **Verify attribute spelling against the ODF reference before coding** — this
-> block is structurally right but the exact key names are from secondary
-> sources, `DUMMY` and `FirstMidiNoteNumber` included. `ODFedit` and `GOODF`
-> exist as working references, and upstream's
-> `src/tests/testing/resources/minimal.organ` is the authority on which keys are
-> mandatory.
+> **Attribute names verified against the GrandOrgue 3.17.3 sources** (spike S3).
+> The block above is structurally right but **not loadable as written**. What a
+> real ODF also needs, and why, is in RESEARCH.md §7; the load-blocking items:
+>
+> - `[Organ]` requires four combination-store keys no tutorial mentions
+>   (`DivisionalsStoreIntermanualCouplers` and three siblings).
+> - `[Organ]` takes `NumberOfRanks`; the `NumberOfStops` shown above belongs in
+>   `[Manual001]`, which must also *list* its stops (`Stop001=1`).
+> - **28 `Disp*` display-metric keys are required** even with nothing displayed.
+>
+> `belvedere_drone/odfgen.py` emits all of this. It does **not** yet emit the
+> real-note key mapping decided above: v0 packs pipes as scale-degree indices
+> and is therefore pinned to `AcceptsRetuning=N`, which is where the ±1800-cent
+> rejection was measured. Spec and code disagree here, and the spec is the
+> authority — the generator has to move.
 
 The app **generates the `.organ` from the profile** (§7). Nobody hand-maintains
 ODFs.
@@ -258,14 +286,21 @@ makes the pacing feel human rather than algorithmic.
 Optional pulse/BPM quantisation exists but is **off by default** — free rhythm is
 truer to these instruments.
 
-**Breath layers.** Each chamber ships as parallel Ranks (`soft`, `normal`,
-`pushed`) at different breath pressures, each with its own timbre *and its own
-tuning offsets*, so pushing sharpens both chambers **together** — real coupled
-behaviour, coarsely quantised. The driver switches Stops between notes;
-Enclosure/CC 11 gives continuous level *within* a layer. Layer switches are only
-clean at note boundaries; the generator must respect that. (Whether GrandOrgue
-honours velocity for per-note selection is unverified — spike S4. If it does,
-layering gets much cheaper.)
+**Breath layers.** Each chamber has `soft`, `normal` and `pushed` layers at
+different breath pressures, each with its own timbre *and its own tuning
+offsets*, so pushing sharpens both chambers **together** — real coupled
+behaviour, coarsely quantised.
+
+Spike S4 settled how to switch them, and the answer is cheaper than Stops.
+GrandOrgue honours velocity two ways: `MinVelocityVolume`/`MaxVelocityVolume`
+scale level continuously, and **`Attack###AttackVelocity` selects which attack
+sample fires from the note-on velocity**. So a layer is a velocity band inside
+one Rank, chosen per note by the note-on itself. The constraint that layer
+switches are only clean at note boundaries was a consequence of Stop-switching
+and does not apply. Enclosure/CC 11 still gives continuous level within a layer.
+
+v0 sends the layer as note-on velocity and ships a single attack per pipe, so
+the layers currently differ in level only; multi-attack ranks are a v2 item.
 
 ---
 
@@ -362,7 +397,17 @@ code. Adopt it: batch-process the VCSL sustains, keep our analysis script only a
 a **QA gate** (it already measures the right things — CV over a 60 s render and
 wrap discontinuity), not as the loop generator.
 
-This is the single biggest schedule item and now has a tool behind it.
+**Reversed by spike S5.** LoopAuditioneer 0.13.0 has no command-line interface
+— its batch processing is a GUI dialog — so it cannot be scripted into a build.
+It is also not needed: GrandOrgue reads loop points from the WAV's own `smpl`
+chunk (`GOWave::LoadSamplerChunk`), and `tools/loopfind.py` already writes that
+chunk. LoopAuditioneer stays useful for auditioning a loop by ear and remains
+the right tool for hand-inspection; the build path does not depend on it.
+
+Loading the output in GrandOrgue then exposed two bugs in `loopfind.py` that no
+amount of offline QA would have caught — loop points with no pre-roll for the
+crossfade, which made **every pipe fail to load**, and a hardcoded
+`dwMIDIUnityNote`. Both are fixed and recorded in RESEARCH.md §7.
 
 ### Fallback
 
@@ -527,7 +572,7 @@ Two consequences worth stating plainly:
    own Panic in addition to CC 120/123, which resets its sound engine even if
    our note-offs were lost.
 
-Sources for this table are in RESEARCH.md §7.
+Sources for this table are in RESEARCH.md §8.
 
 ### 10.2 Three tiers of setting
 
@@ -776,28 +821,33 @@ dependency, and §10.5 gets that to zero.
 ## 12. Acceptance criteria
 
 **v0 is done when:**
-1. A 10-minute continuous run produces no stuck notes and no MIDI buffer growth.
-2. Killing the app (SIGINT and SIGKILL-then-restart) leaves no sounding drone.
-3. Every generated loop passes `tools/loop_qa.py`: 60 s render envelope
-   **CV < 0.02** and wrap discontinuity **< 3.0** (as a multiple of the loop's
-   own typical sample-to-sample step). Currently 8/13 — see §6.
-4. Measured output pitch of each pipe matches the profile's cents table within
-   **±3 cents** (record GrandOrgue's output, run `dsp.detect_f0` seeded from the
-   nominal note).
-5. Two runs with the same seed **and no submissions** produce byte-identical
-   MIDI streams; a run with submissions reproduces byte-identically from
-   seed + session log (§10.9).
-6. No two consecutive breaths are identical in note sequence.
+
+| # | Criterion | Status |
+|---|---|---|
+| 1 | A 10-minute continuous run produces no stuck notes and no MIDI buffer growth. | **Pass** — `cli.py check` runs 60 breaths and asserts note-ons balance note-offs and nothing is left sounding. |
+| 2 | Killing the app (SIGINT and SIGKILL-then-restart) leaves no sounding drone. | **Partial** — the panic path (CC 123 + CC 120, signal handler, `atexit`) is asserted by `check`. SIGKILL cannot be caught by anything; recovery there depends on GrandOrgue, and is untested. |
+| 3 | Every generated loop passes `tools/loop_qa.py`: 60 s render envelope **CV < 0.02** and wrap discontinuity **< 3.0**. | **8/13** — unchanged; the S5 fixes moved metadata, not audio. The shipped profile uses one failing loop (F#5, wrap 4.5). |
+| 4 | Measured output pitch of each pipe matches the profile's cents table within **±3 cents** (record GrandOrgue's output, run `dsp.detect_f0` seeded from the nominal note). | **Not verified.** Needs GrandOrgue's audio output recorded, which needs a real audio device — it cannot be done from a headless session. |
+| 5 | Two runs with the same seed **and no submissions** produce byte-identical MIDI streams; a run with submissions reproduces byte-identically from seed + session log (§10.9). | **Pass** for the no-submission half — and a different seed is asserted to differ. The submission half has nothing to test until the GUI exists. |
+| 6 | No two consecutive breaths are identical in note sequence. | **Pass** over 60 breaths. |
+
+Run criteria 1, 2, 5 and 6 with:
+
+```bash
+python3 -m belvedere_drone.cli check profiles/naf-double-drone-as.toml --out-dir build
+```
 
 ## 13. Spikes, in order
 
-| # | Spike | Decides |
+All five are **done**. Full record in RESEARCH.md §7.
+
+| # | Spike | Outcome |
 |---|---|---|
-| **S1** | **Read the tuning sources.** Flutopedia/flutetree are egress-blocked here; get Payne's measurements by hand. | §2 — and §2 is the project. Do it first. |
-| S2 | Send pitch bend to GrandOrgue, observe. | Confirms or kills §1 |
-| S3 | Hand-write a minimal ODF: one Rank, one pipe, one looped WAV, audible. | Verifies §4 attribute names; smallest proof of the sample path |
-| S4 | Does a Rank respond to MIDI velocity? | Whether breath layers need Stop-switching |
-| S5 | Run LoopAuditioneer batch over the 13 VCSL sustains; score with the QA gate. | Retires the §6 risk — or reopens it |
+| S1 | Read the tuning sources. | **Negative.** The stretched octave is unsupported and the cited figures trace to search-engine summaries, not sources. §2 rewritten; the profile ships just intonation instead, sourced to a maker. |
+| S2 | Send pitch bend to GrandOrgue, observe. | **Confirms §1**, and from the source rather than a forum: `GOMidiEvent::MidiType` has no pitch-bend member. |
+| S3 | Hand-write a minimal ODF. | **Loads**, after five corrections to §4. The generator in `odfgen.py` produces a clean load in GrandOrgue 3.17.3. |
+| S4 | Does a Rank respond to MIDI velocity? | **Yes**, two ways. Breath layers do not need Stop-switching; see §5. |
+| S5 | LoopAuditioneer batch over the 13 VCSL sustains. | **Tool rejected** — GUI-only, unscriptable, and unnecessary since `loopfind.py` already writes the `smpl` chunk GrandOrgue reads. Loading the result exposed two real bugs. |
 
 ## 14. Phasing
 
@@ -848,9 +898,12 @@ neighbours are drone-without-melody or melody-without-instrument.
 
 ## 18. Open questions
 
-1. **Does the stretched octave survive S1?** If NAF octaves really aren't 2:1,
-   §2 is the headline feature. If they are, GrandOrgue is merely convenient
-   rather than uniquely right, and the project is less interesting.
+1. ~~**Does the stretched octave survive S1?**~~ **Answered: no.** See §2. The
+   headline feature is gone; what remains is a sourced just-intonation drone
+   flute, which is a smaller but honest claim. The interesting question it
+   leaves behind: *is just intonation audibly better under a sustained drone
+   than 12-TET?* That one can be settled by ear, with A/B profiles, once
+   criterion 4 is verifiable.
 2. **Does a retuned recorder read as a drone flute?** Unknown until heard. The
    fallback is synthesis, which trades one wrongness for another.
 3. **Do the European double flutes justify separate profiles**, or are dvojnice

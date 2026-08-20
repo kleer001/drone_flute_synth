@@ -190,7 +190,144 @@ for each candidate profile is in SPEC.md §15. Summary of what needs work:
 - **Ocarinas** — deferred. The multi-chamber ones found extend *range*, not
   drone. VCSL's CC0 ocarinas are available whenever that changes.
 
-## 7. GrandOrgue runtime control, and reverb
+---
+
+## 7. Spike results (SPEC §13)
+
+All five spikes were run against GrandOrgue **3.17.3-1** (upstream AppImage,
+newer than Ubuntu noble's packaged 3.13.1) and the VCSL Baroque Soprano
+Recorder. Where a claim below cites a source file, it was read in the
+GrandOrgue tree at that version rather than taken from documentation — the
+secondary documentation turned out to be incomplete in ways that matter.
+
+### S1 — Read the tuning sources: **negative result, and it changes §2**
+
+The cents values §2 was built on could not be confirmed, and the direction of
+the claim is contradicted by the sources that do exist.
+
+| Source | What it actually contains |
+|---|---|
+| [flutetree.org MythPentatonic](https://www.flutetree.org/nature/MythPentatonic.html) | Reachable. Discusses pentatonic/diatonic/chromatic tuning conceptually. **No cents values of any kind.** |
+| [Flutopedia `naf_tunings.htm`](https://www.flutopedia.com/naf_tunings.htm) | Scale steps given in **integer semitones** (`3-2-2-3-2` for the minor pentatonic). No cents table, no measurement table, no Payne citation, no statement about octave size. |
+| [Flutopedia `tuners.htm`](https://www.flutopedia.com/tuners.htm) | One cents figure only, and it is about temperature: 1.7 cents per °F. |
+| [ATFlutes](https://atflutes.com/information/learning/native-american-style-flute-tuning) | Frames tuning in equal temperament outright: "In equal temperament there are one hundred cents between each adjacent note." |
+| [Southern Cross Flutes](https://www.southerncrossflutes.com/natural-tuning-vs-equal-temperament/) | Offers **just intonation** ("Natural Tuning") as an option on request, contrasted against equal temperament. Publishes no cents values. A just octave is 2:1. |
+| [Prairie 2006, *Understanding the Acoustics of the NAF*](https://www.flutopedia.com/refs/Prairie_2006_UnderstandingAcousticsOfTheNAF.pdf) | The acoustics reference Flutopedia hosts. Uses 12-TET and the MIDI scale as its reference grid throughout. Treats octave deviation as a **defect to engineer out**: "A simple cylindrical flute will not play overblown notes in tune with those of the first register, so some modifications must be made", and "why do the octave notes usually play flat in a cylindrical flute?" |
+
+The triple 280–330 / 185–220 / 1150–1250 cents appears **only in search-engine
+AI summaries**, returned verbatim and identically for two differently-worded
+queries, and on none of the primary pages. It should not be treated as a
+measurement from anywhere.
+
+**Conclusion.** Makers aim at a 2:1 octave and fight the flat second octave;
+they do not cultivate a stretched one. Nothing found supports a stretched
+octave, so the profile shipped here does not assert one. The one non-equal
+tuning for a drone flute that a maker states on the record is **just
+intonation**, and a drone instrument has an acoustic reason to want it: every
+melody note sounds against a fixed root, where beating is audible in a way it
+is not on a melody-only instrument. That is what `profiles/` uses, with
+`tuning_origin = "maker-spec"`.
+
+**Consequence for the GrandOrgue argument.** Per-pipe tuning is still the right
+mechanism, but it is no longer *uniquely* required — a 2:1-octave scale is
+expressible as a twelve-entry temperament, which many samplers support. See §2
+of SPEC.md as revised.
+
+### S2 — Pitch bend: **confirmed absent, now from primary source**
+
+`GOMidiEvent::MidiType` (`src/grandorgue/midi/events/GOMidiEvent.h`) enumerates
+`MIDI_NOTE`, `MIDI_AFTERTOUCH`, `MIDI_CTRL_CHANGE`, `MIDI_PGM_CHANGE`,
+`MIDI_RPN`, `MIDI_NRPN` and several SysEx variants. **There is no pitch-bend
+member**, so a bend message has no representation in the live MIDI path at all.
+Status `0xE0` appears in exactly one place in the tree,
+`midi/files/GOMidiFileReader.cpp` — the MIDI *file* reader, not live input.
+
+Tremulants are amplitude-only as claimed: `GOTremulant` reads `AmpModDepth`,
+`Period`, `StartRate`, `StopRate` and nothing pitch-related.
+
+This upgrades SPEC §1 from forum-level hearsay to verified.
+
+### S3 — Minimal ODF: **loads, after five corrections**
+
+SPEC §4's illustrative ODF is structurally right and **not loadable**. What it
+takes, established by loading candidates in GrandOrgue under Xvfb and reading
+the error each time:
+
+1. Four combination-store keys are required in `[Organ]` and appear in no
+   tutorial: `DivisionalsStoreIntermanualCouplers`,
+   `DivisionalsStoreIntramanualCouplers`, `DivisionalsStoreTremulants`,
+   `GeneralsStoreDivisionalCouplers`. Upstream's own
+   `src/tests/testing/resources/minimal.organ` is the authority here.
+2. `[Manual001]` must *list* its stops — `Stop001=1`, `Stop002=2` — as well as
+   count them. `NumberOfStops` alone fails.
+3. **28 `Disp*` keys are required** even with nothing displayed, because
+   `GOGUIHW1DisplayMetrics` reads them all with `required=true`. Omitting one
+   fails the load. `DispScreenSizeHoriz` accepts `SMALL`/`MEDIUM`/`MEDIUM
+   LARGE`/`LARGE` or a pixel count; colours accept `BLACK` or `#RRGGBB`.
+4. The built-in console reads its own element counts from `[Organ]`;
+   `NumberOfLabels` is the only one not already covered by a model-level key.
+5. `[Organ]` takes `NumberOfRanks`. `NumberOfStops` at organ level is the
+   *panel's* count, not the model's — the model's lives in `[Manual001]`.
+
+Attribute names from §4 that are correct as written: `PitchTuning`,
+`PitchCorrection`, `LoopCrossfadeLength`, `ReleaseCrossfadeLength`,
+`NumberOfLogicalPipes` (1–192), `WindchestGroup`, `Pipe%03d`.
+
+**`AcceptsRetuning` must be `N`.** A chamber's MIDI keys are scale-degree
+indices, not pitches, so the shift a stock temperament would apply is the
+distance from the sample's recorded note to an unrelated key number.
+`GOSoundingPipe::Validate` rejects any pipe whose hypothetical retune exceeds
+1800 cents, and with keys based at 36 every pipe measured −1800 to −2400 cents
+and was rejected. It is also correct musically: the profile's cents table is
+the instrument's temperament.
+
+### S4 — Velocity: **yes, and it makes breath layers much cheaper**
+
+`GOSoundingPipe` supports two independent velocity mechanisms:
+
+- `MinVelocityVolume` / `MaxVelocityVolume` (rank or pipe) — continuous
+  velocity-to-volume scaling, via `GOSoundProvider::SetVelocityParameter`.
+- `Attack###AttackVelocity` (0–127) — a per-attack-sample velocity threshold.
+  `GOSoundingPipe` stores it as `min_attack_velocity` and selects which attack
+  fires from the note-on velocity.
+
+So a breath layer can be a velocity band inside one Rank rather than a Stop
+change. SPEC §5's constraint that "layer switches are only clean at note
+boundaries" is a consequence of Stop-switching and does not apply: with
+velocity, the layer is chosen per note, by the note-on itself.
+
+### S5 — Loop authoring: **LoopAuditioneer is GUI-only; not needed**
+
+LoopAuditioneer 0.13.0 exposes batch processing as a dialog
+(`BatchProcessDialog` in the binary) and no command-line interface — launching
+it with `--help` opens a window. It cannot be scripted.
+
+It also is not required. GrandOrgue reads loop points from the WAV's own `smpl`
+chunk (`GOWave::LoadSamplerChunk`, `WAVE_TYPE_SAMPLE`), and `tools/loopfind.py`
+already writes that chunk. The struct is the standard one: nine `uint32` of
+header (`dwManufacturer`, `dwProduct`, `dwSamplePeriod`, `dwMIDIUnityNote`,
+`dwMIDIPitchFraction`, `dwSMPTEFormat`, `dwSMPTEOffset`, `cSampleLoops`,
+`cbSamplerData`) followed by six `uint32` per loop.
+
+Two bugs in `loopfind.py` surfaced only once GrandOrgue tried to load the
+output, and both are easy to repeat:
+
+- **Loop points had no pre-roll.** The file emitted the loop twice and pointed
+  the loop at the *first* copy, starting at sample 0. GrandOrgue crossfades a
+  loop against the samples *preceding* its start, so it reported "the loop 1 is
+  ignored: not enough samples for crossfade before it's start", then "No valid
+  loops exist in the file", and **every pipe failed to load**. Fixed by
+  emitting the loop three times and pointing at the middle copy.
+- **`dwMIDIUnityNote` was hardcoded to 60** for every note. GrandOrgue reads it
+  back as the sample's recorded pitch (`GOSoundProviderWave`), so it silently
+  mistunes any auto-tuned pipe built from the file. Fixed to the real note.
+
+Neither changes the audio, so the QA gate still reports **8/13** with the same
+CV and wrap figures — the loop search itself is unaffected.
+
+---
+
+## 8. GrandOrgue runtime control, and reverb
 
 Checked because SPEC's §3 "write-only device" had hardened into a stronger claim
 than the evidence supported — that nothing about the instrument can change once
