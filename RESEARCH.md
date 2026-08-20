@@ -189,3 +189,82 @@ for each candidate profile is in SPEC.md §15. Summary of what needs work:
   credible source. Verify before profiling.
 - **Ocarinas** — deferred. The multi-chamber ones found extend *range*, not
   drone. VCSL's CC0 ocarinas are available whenever that changes.
+
+## 7. GrandOrgue runtime control, and reverb
+
+Checked because SPEC's §3 "write-only device" had hardened into a stronger claim
+than the evidence supported — that nothing about the instrument can change once
+loaded. Write-only is true about **reading**; it says nothing about what
+GrandOrgue itself can do at runtime.
+
+### What can change while an organ is loaded
+
+| Capability | Runtime? | Drivable by us? | Evidence |
+|---|---|---|---|
+| Panic (all sound off) | yes | **yes, MIDI** | "Added Midi listener for Panic button and Exit GO function", [CHANGELOG](https://github.com/GrandOrgue/grandorgue/blob/master/CHANGELOG.md) 3.15.0; help: "Panic button can also be fired by a MIDI message" |
+| Exit, Memory Set | yes | yes, MIDI | help, MIDI objects |
+| Temperament | yes — "The samples are retuned on the fly when playing. No additional disk storage is required." | **no** | [help/grandorgue.xml](https://github.com/GrandOrgue/grandorgue/blob/master/help/grandorgue.xml) |
+| Voicing — amplitude, gain, tuning "at every level of the sample set from the whole organ level down to the individual pipe" | yes | **no** | help, Organ Settings dialog |
+| Reload a regenerated ODF | yes — File → Reload, "reload the currently loaded sample set from disk" | **no** — menu/keyboard only | help |
+| MIDI Tuning Standard / real-time retune | **no** | no | [discussion #1395](https://github.com/GrandOrgue/grandorgue/discussions/1395) — maintainer called runtime pitch modification "rather unorthodox regarding real pipe organs"; no implementation |
+
+The help lists only **Panic, Exit and Memory Set** as application-level functions
+with MIDI event assignment. Load, Open and Reload are not among them, so the
+regenerate-and-reload path in SPEC §10.8 needs a human.
+
+**Two design consequences.** Panic being a MIDI object gives the stuck-drone
+failure mode a second lever independent of our note-offs (SPEC §9). And the
+temperament engine means intonation *could* be a runtime control if the ODF
+opted into retuning — which our scale-degree key mapping currently forbids via
+`AcceptsRetuning=N` (see §7 of this file). That is SPEC spike S6.
+
+> **Unverified, flagged.** A [report](https://github.com/GrandOrgue/grandorgue/issues/1351)
+> that selecting any non-original temperament retunes the whole organ to
+> a1 = 440 Hz came from a search summary, not the issue read at source. If true
+> it collides with the 432 option in SPEC §8. Confirm during S6.
+
+### Reverb
+
+GrandOrgue has a **built-in convolution reverb** — File → Settings → Reverb →
+Enable Convolution Reverb, taking an impulse-response WAV, with gain, delay,
+offset and tail-length settings. It is built on `zita-convolver`, Fons
+Adriaensen's library — *the same engine* an external `jconvolver` would run, so
+routing an external convolver buys routing flexibility, not sound quality.
+
+Reported caveats, all forum/discussion level rather than help-documented:
+
+- Minimum 1024 samples per buffer or it does not work.
+- Gain wants roughly 0.05–0.2; higher distorts.
+- Settings are **global, not per-organ**, and only take effect after closing and
+  reopening the dialog.
+- Toggling reverb while notes sound stops them on Linux.
+- The UI carries a "not currently supported" warning although it functions.
+- Best paired with **dry** samples — which VCSL's close-recorded recorders are.
+
+Source: [discussion #975](https://github.com/GrandOrgue/grandorgue/discussions/975),
+[discussion #625](https://github.com/GrandOrgue/grandorgue/discussions/625).
+**Not confirmed against the help documentation** — a fetch of `help/grandorgue.xml`
+for the Reverb tab failed on this environment's egress proxy. Verify the buffer
+and gain figures before writing them into a launch script.
+
+**Impulse responses.** The obvious source is the OpenAIR library (University of
+York), which has church and cathedral surveys. **Its licence could not be
+checked — `openair.hosted.york.ac.uk` is blocked by this environment's egress
+proxy**, same as the tuning sources in §2. Do not ship any IR until the terms
+are read at source. `zita-rev1` (algorithmic, Fons Adriaensen) sidesteps the
+question entirely and is the safe default if licensing stalls.
+
+**The finding that matters musically** is not which reverb but how long: SPEC §5
+builds the whole performance on the drone *stopping* for breath, and a 5–6 s
+cathedral tail fills the 0.3–1.6 s inhale gap and erases it. Spike S8.
+
+### External alternatives, if the built-in path disappoints
+
+| Tool | Kind | Note |
+|---|---|---|
+| [zita-rev1](https://kokkinizita.linuxaudio.org/linuxaudio/) | algorithmic, JACK + LV2 | Fons Adriaensen; no IR licensing question; strong on sustained tone |
+| [Dragonfly Reverb](https://michaelwillis.github.io/dragonfly-reverb/) | algorithmic, LV2/VST | Hall / Room / Plate / Early Reflections, on Freeverb3 |
+| jconvolver | convolution, JACK | same `zita-convolver` engine as GrandOrgue's built-in |
+
+All need a plugin host (`jalv`, `carla`) and JACK wiring — an extra process and
+extra launch-script complexity that the built-in reverb avoids entirely.

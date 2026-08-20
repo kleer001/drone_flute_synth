@@ -108,6 +108,45 @@ sole authority on what is sounding, and must send all-notes-off on exit *and* on
 crash (install a signal handler and an `atexit` hook — a stuck drone is the worst
 possible failure mode of this app). Treat GrandOrgue as a write-only device.
 
+Write-only is a statement about **reading**. GrandOrgue does change at runtime —
+temperament, per-pipe voicing and reverb are all live in its own window — we
+simply have no channel to drive them and no way to observe them. §10.1 has the
+capability table and RESEARCH.md §7 the sources; both note that **Panic is
+MIDI-assignable**, which gives the stuck-drone path a second, independent lever.
+
+### Signal chain and reverb
+
+```
+  our app  --MIDI-->  GrandOrgue  --[built-in convolution reverb]-->  JACK  -->  speakers
+```
+
+Reverb is **not app code and not an extra process**: GrandOrgue ships a
+convolution reverb (File → Settings → Reverb), built on Fons Adriaensen's
+`zita-convolver` — the same engine an external `jconvolver` would use. Point it
+at an impulse response and the room happens inside the process we are already
+running.
+
+Three things about it are load-bearing rather than cosmetic:
+
+- **A dry sample set is the right input.** VCSL's close-recorded recorders (§6)
+  suit convolution; a wet sample set would double the room.
+- **Reverb length fights the breath model.** §5's whole argument is that the
+  drone *stops* when the player inhales. A cathedral tail of 5–6 s fills the
+  0.3–1.6 s inhale gap completely and erases the effect the breath model exists
+  to produce. Prefer a room or chapel of roughly **1.5–2.5 s**. This is a
+  musical parameter coupled to `inhale_s`, not a preset to pick by taste —
+  spike S8.
+- **It does not rescue a bad loop.** Envelope pulsing (§6) is amplitude
+  modulation and survives convolution unchanged; the QA gate measures the dry
+  loop, which is correct. Reverb masks nothing the gate cares about.
+
+Settings are global rather than per-organ, and toggling reverb while notes sound
+stops them on Linux — so it is configured once, before the performance, which is
+exactly how §3 already treats GrandOrgue. If the built-in path disappoints, the
+external options are `zita-rev1` (algorithmic, no IR licensing question at all)
+and Dragonfly Reverb (LV2, four algorithms), both needing a plugin host and JACK
+wiring in the launch script. RESEARCH.md §7 has the evidence and its gaps.
+
 ---
 
 ## 4. ODF mapping
@@ -413,6 +452,7 @@ One manual, one channel, chambers separated by Stop state.
 | CC 7 | master level |
 | Stop switching | select breath layer (`soft`/`normal`/`pushed`) |
 | CC 120 / 123 | all-sound-off / all-notes-off — sent on exit, signal, and crash |
+| GrandOrgue Panic | a MIDI event bound to GrandOrgue's own Panic, fired alongside CC 120/123 — resets its sound engine even if our note-offs were lost (§10.1) |
 
 MIDI note numbers are assigned by the ODF generator and written into the profile's
 generated manifest, so app and ODF never disagree about which key is which pipe.
@@ -421,134 +461,204 @@ generated manifest, so app and ODF never disagree about which key is which pipe.
 
 ## 10. Control surface and web GUI
 
-A small local web page — sliders, pull-downs, radio buttons — over a headless
-engine. The only feedback it gives is a per-control **spinner meaning "you
-changed this, the performance hasn't picked it up yet"**, which stops when the
-change takes effect. No meters, no note display, no visualisation.
+A small local web page — sliders, pull-downs, radio buttons, and a **Submit**
+button. Changes do not apply as you make them. You edit a working copy, submit
+it, and the whole set lands together on the next breath boundary, with a
+countdown saying when.
 
-### 10.1 Why so little feedback is the honest maximum
+### 10.1 What GrandOrgue actually allows
 
-§3 makes GrandOrgue a **write-only device** — we cannot query what is sounding.
-Any "now playing" display would be a display of our own intent dressed up as
-observation. So the page shows committed parameter values and nothing else. The
-pending spinner is the one piece of live state we genuinely own, because the
-engine knows exactly when it consumed a change.
+§3 says GrandOrgue is a **write-only device**, which is true about *reading* its
+state and was previously over-read as "nothing can change at runtime". Checked
+against the documentation, the picture is more useful:
 
-### 10.2 Runtime controls vs. build-time settings — a correction to §8
+| Capability | Available at runtime? | Reachable from our app? |
+|---|---|---|
+| Notes, CC 11, CC 7, stop switching | yes | **yes** — MIDI (§9) |
+| Panic (all sound off) | yes | **yes** — MIDI-assignable since 3.15.0 |
+| Exit, Memory Set | yes | yes — MIDI-assignable |
+| Temperament switching | yes — "samples are retuned on the fly when playing" | **no** — GUI only, not MIDI-bindable |
+| Voicing: per-pipe amplitude, gain, tuning | yes — Organ Settings dialog, down to individual pipe | **no** — GUI only |
+| Reload a regenerated ODF | yes — File → Reload | **no** — menu/keyboard only |
+| Real-time pitch bend / MIDI Tuning Standard | no — declined upstream | no |
 
-§8 lists concert reference and intonation among "controls". **They are not
-runtime controls.** Both are baked into per-pipe `PitchTuning` in the generated
-`.organ` (§4), and §3 means we cannot make GrandOrgue reload an organ. The same
-applies to the instrument profile itself and to the set of playable notes.
+Two consequences worth stating plainly:
 
-Changing any of those requires: regenerate the ODF → the user reloads it in
-GrandOrgue by hand → restart the app. That is a launch-time workflow, not a
-slider.
+1. **Live retuning and revoicing exist, in GrandOrgue's own window.** We cannot
+   drive them, but the user already has that window open (§3). Hand-voicing by
+   ear is a legitimate workflow, not a workaround — see spike S7 for reading
+   those numbers back.
+2. **Panic is MIDI-assignable, so the panic path gets a second belt.** §3 calls
+   a stuck drone the worst failure mode; our handler can now fire GrandOrgue's
+   own Panic in addition to CC 120/123, which resets its sound engine even if
+   our note-offs were lost.
 
-**The GUI therefore exposes runtime controls only.** Build-time settings appear
-as read-only facts about the loaded organ, with a line saying they are fixed for
-this session. Choosing them stays in `cli.py` flags.
+Sources for this table are in RESEARCH.md §7.
 
-| Setting | Where it lives |
-|---|---|
-| profile, concert reference, intonation table, playable notes | launch-time; ODF-baked; read-only in the GUI |
-| drone root, mode, harmony interval, breath, mood, level, run state | runtime; the GUI's job |
+### 10.2 Three tiers of setting
+
+| Tier | Examples | How it changes |
+|---|---|---|
+| **Runtime** | drone root, mode, harmony interval, breath, mood, level, run state | the GUI's job — submit, next breath |
+| **Build-time** | concert reference, intonation table, profile, playable notes | regenerate ODF → user reloads in GrandOrgue → restart (§10.8) |
+| **GrandOrgue-side** | temperament, per-pipe voicing, reverb (§3) | the user, in GrandOrgue's window; we neither set nor see it |
+
+§8 lists concert reference and intonation among "controls" without saying which
+tier they are. They are build-time: both are baked into per-pipe `PitchTuning`
+in the generated ODF (§4). Whether that is a permanent property of the design or
+an artifact of using MIDI keys as scale-degree indices is **spike S6** — if the
+key mapping changed, GrandOrgue's temperament system could make intonation a
+runtime dropdown, which given §2 would be the most interesting control in the
+app.
 
 ### 10.3 The seam
 
 The engine is headless and authoritative; the GUI is one client of a
-`Controller` with two operations:
+`Controller`:
 
 ```
-apply(param, value) -> change_id      # queue a change; never applies it inline
-snapshot()          -> dict           # committed values + pending change ids
+stage(changes: dict) -> None            # edit the working copy; nothing sounds different
+submit()             -> submission_id   # validate the whole set, queue it atomically
+snapshot()           -> dict            # committed values, working copy, in-flight id, eta
 ```
 
 `cli.py` drives the same `Controller`. The web server never touches the
 scheduler thread, the MIDI port, or the panic path.
 
-### 10.4 When a change counts as enacted
+### 10.4 The submit model
 
-This definition is the whole spinner contract, so it is stated exactly:
+**Why a button and not live controls.** Not politeness about latency — a
+correctness requirement. Under per-control commits, changing mode and then root
+lets one breath run with a root that is not in the new mode. Submitting a set
+makes the change atomic: root, mode and mood land on the same breath or none of
+them do.
 
-> A change is **enacted** when the scheduler has begun a breath computed with the
-> new value. Not when it was received, not when it was queued.
+Three states per control:
 
-Mechanism: the engine holds `pending: {change_id: (param, value)}`. At the top of
-each breath cycle (§5) it drains `pending` into the live parameter set. Draining
-is the only place parameters change, which is what guarantees §5's rule that
-layer switches land on note boundaries.
+| State | Meaning | Shown as |
+|---|---|---|
+| **committed** | what the performance is using | normal |
+| **dirty** | edited here, not submitted | marked, with a global *Revert* |
+| **in-flight** | submitted, waiting for the next breath | locked, with the countdown |
 
-- A second change to the same parameter **replaces** the pending one. The
-  superseded `change_id` simply leaves `pending`, so its spinner stops too. The
-  page does not need to distinguish superseded from enacted.
-- Two exceptions apply immediately, with **no spinner**, because queueing them
-  for up to 14 s would be user-hostile: **master level** (CC 7) and **stop**.
-- Worst-case spinner duration is one breath plus an inhale gap — up to ~15.6 s
-  at the §5 clamps. The control's label says "applies at the next breath" so the
-  wait reads as designed rather than hung.
+- **Validation happens at submit**, server-side, over the whole set — which is
+  where §8's "we never offer a note the instrument can't make" finally has a
+  home. A root outside the mode's intersection is rejected, nothing applies, and
+  the page says which field failed. Per-control commits had nowhere to put a
+  cross-field rule.
+- **One `submission_id` per submit.** No per-control ids, and no superseding
+  rule to specify: a set is in flight or it isn't.
+- **Two exceptions bypass Submit entirely** — **master level** (CC 7) and
+  **Start/Stop**. They live in a separate transport strip that is visibly live,
+  so nobody hunts for a Submit button for the volume slider.
+- While a set is in flight the form is locked. A second submit is refused rather
+  than queued; there is at most one pending set.
 
-### 10.5 Transport: polled HTTP, no websockets
+### 10.5 The countdown
+
+The wait is **exact, not estimated**. The engine drew this breath's length and
+the inhale gap from their distributions (§5) and knows when the breath started,
+so seconds-to-next-drain is arithmetic. `/state` carries `next_drain_in`; the
+page ticks locally and resyncs on each poll.
+
+> **Applies in 11 s** — then 10, 9, …
+
+Telling the user it will be a while is fine; pretending it is instant is not.
+Two rules:
+
+- If the countdown reaches zero and the set has not drained, **switch to an
+  indeterminate spinner**. That is the honest display when the truth is harder
+  to find than expected, and it should be rare enough to be worth logging.
+- Worst case is one breath plus an inhale gap — ~15.6 s at the §5 clamps.
+
+### 10.6 Transport: polled HTTP
 
 Python's stdlib `http.server.ThreadingHTTPServer` on a daemon thread, serving
 one static page. **No new dependencies** beyond the MIDI library.
 
-The page polls `GET /state` every 250 ms. Polling rather than SSE or websockets
-because the only thing being pushed is "is this id still pending", loopback
-polling at 4 Hz costs nothing, and an SSE stream under `ThreadingHTTPServer`
-pins one thread per open tab with reconnect logic to match. Nothing here needs
-it.
+The page polls `GET /state` every 250 ms. Polling rather than SSE or websockets:
+the only live values are a countdown and an in-flight flag, loopback polling at
+4 Hz costs nothing, and an SSE stream under `ThreadingHTTPServer` pins a thread
+per open tab with reconnect logic to match.
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
 | `GET` | `/` | — | the single static page |
-| `GET` | `/state` | — | `{run_id, seed, breath_index, committed{}, pending[], readonly{}}` |
-| `POST` | `/set` | `{param, value}` | `{change_id}` — issued only after the engine has queued it |
-| `POST` | `/stop` | — | `{ok}` — immediate; all-notes-off |
-| `POST` | `/start` | — | `{ok}` — immediate |
+| `GET` | `/state` | — | `{run_id, seed, breath_index, committed{}, in_flight, next_drain_in, readonly{}}` |
+| `POST` | `/submit` | full parameter set | `{submission_id}` or `{errors: {field: reason}}` |
+| `POST` | `/level` | `{value}` | `{ok}` — immediate, no submit |
+| `POST` | `/stop`, `/start` | — | `{ok}` — immediate |
+| `POST` | `/regenerate` | — | `{odf_path, reload_required: true}` (§10.8) |
 
-Reconciliation rules for the page:
+Reconciliation, now that the page holds a working copy:
 
-- A control that is focused or has a pending change is **not** overwritten by a
-  poll. Everything else follows `/state`, so two open tabs converge within one
-  poll interval.
-- `run_id` is derived from the seed and start time. If it changes, the engine
-  restarted: the page reloads rather than showing stale values.
-- A failed poll marks the page disconnected and disables every control.
+- Polls update the **committed baseline only**. A dirty field is never
+  overwritten by a poll.
+- If another tab submits while this one is dirty, the page shows *"settings
+  changed underneath you"* with a choice: keep editing, or discard and reload
+  the new baseline. Last submit wins; we do not merge.
+- `run_id` changing means the engine restarted — the page reloads rather than
+  showing stale values. A failed poll marks it disconnected and disables
+  everything.
 
-### 10.6 The controls
+### 10.7 The controls
 
-| Control | Widget | Values | Commit |
-|---|---|---|---|
-| Run | Start / Stop buttons | — | immediate |
-| Master level | slider | 0–127 → CC 7 | immediate |
-| Drone root | pull-down | drone chamber's available notes (§7) | next breath |
-| Mode | pull-down | scales ∩ playable notes (§8) | next breath |
-| Harmony interval | radio | 5th / 4th / 3rd — hidden unless the profile has a third chamber | next breath |
-| Mood preset | pull-down | the six §8 presets, plus *Custom* | next breath |
-| Mood weights | 8 sliders | ranges from the §8 table | next breath |
-| Breath mean / spread / inhale | 3 sliders | 3–14 s / 0–5 s / 0.3–1.6 s | next breath |
-| Pulse | radio off/on + BPM slider | off by default (§5) | next breath |
-| Seed | read-only text + *Reseed* button | — | next breath |
+Transport strip — live, no Submit:
+
+| Control | Widget | Values |
+|---|---|---|
+| Run | Start / Stop | — |
+| Master level | slider | 0–127 → CC 7 |
+| Panic | button | CC 120/123 + GrandOrgue's own Panic (§10.1) |
+
+Submit-gated panel:
+
+| Control | Widget | Values |
+|---|---|---|
+| Drone root | pull-down | drone chamber's available notes (§7) |
+| Mode | pull-down | scales ∩ playable notes (§8) |
+| Harmony interval | radio | 5th / 4th / 3rd — hidden unless the profile has a third chamber |
+| Mood preset | pull-down | the six §8 presets, plus *Custom* |
+| Mood weights | 8 sliders | ranges from the §8 table |
+| Breath mean / spread / inhale | 3 sliders | 3–14 s / 0–5 s / 0.3–1.6 s |
+| Pulse | radio off/on + BPM slider | off by default (§5) |
+| Seed | text + *Reseed* | — |
 
 Moving any mood weight switches the preset pull-down to *Custom*; choosing a
-preset overwrites all eight sliders. Read-only block above the controls: profile
-id, concert reference, intonation origin (`tuning_origin` from §7), ODF path.
+preset overwrites all eight sliders. Both are working-copy edits — nothing
+sounds different until Submit.
 
-### 10.7 Determinism — an amendment to §12 criterion 5
+Read-only block: profile id, concert reference, intonation origin
+(`tuning_origin` from §7), ODF path, and a line saying temperament, voicing and
+reverb belong to GrandOrgue and are not reflected here.
+
+### 10.8 Regenerate and reload
+
+Build-time settings get an explicit, honest two-step. `POST /regenerate` writes
+a new `.organ` from the current profile and returns the path; the page then says:
+
+> **Regenerated ODF written.** Press **File → Reload** in GrandOrgue, then restart
+> the player. Sound stops while the sample set loads, and the drone will break.
+
+We cannot press it for them (§10.1). Reload is a between-performances action,
+never a control, and the page must say so rather than implying a seamless
+switch.
+
+### 10.9 Determinism — an amendment to §12 criterion 5
 
 Byte-identical replay from a seed alone cannot survive a GUI that changes
-parameters mid-run. Resolution: the engine appends every **enacted** change to a
-JSONL session log as `{breath_index, param, value}`. Criterion 5 becomes:
+parameters mid-run. The engine appends every **applied submission** to a JSONL
+session log as `{breath_index, submission_id, params{}}` — one entry per set,
+not per field. Criterion 5 becomes:
 
-> Two runs from the same seed **with no control changes** produce byte-identical
-> MIDI; a run with control changes reproduces byte-identically from seed +
-> session log.
+> Two runs from the same seed **with no submissions** produce byte-identical
+> MIDI; a run with submissions reproduces byte-identically from seed + session
+> log.
 
 The log is written whether or not the GUI is running, so a CLI-only run replays
 by the same rule.
 
-### 10.8 Binding and access
+### 10.10 Binding and access
 
 Default bind is `127.0.0.1:8737`. On loopback there is no authentication and
 none is needed — any local user could open the MIDI port directly.
@@ -559,31 +669,35 @@ endless player) **requires** `--token`, checked on every request including
 threat is modest but not zero: an open port here lets a stranger start an
 endless drone on someone's speakers.
 
-### 10.9 What the GUI must never do
+### 10.11 What the GUI must never do
 
-- **Own the lifecycle.** Closing the tab does not stop the performance. The
-  engine is the process; the page is a window onto it.
+- **Own the lifecycle.** Closing the tab does not stop the performance.
 - **Sit in the panic path.** All-notes-off on exit, signal, and crash stays
   engine-side (§3). A browser that never loads must not change failure
   behaviour.
-- **Block the scheduler.** Server on its own thread, changes crossing by queue.
-- **Claim knowledge of GrandOrgue's state** (§10.1). If the user moves a stop in
-  GrandOrgue's own window, our display is wrong and cannot know it — the
-  read-only block says so.
+- **Block the scheduler.** Server on its own thread, submissions crossing by
+  queue.
+- **Claim knowledge of GrandOrgue's state.** If the user switches temperament or
+  revoices a pipe in GrandOrgue's window, our display is wrong and cannot know
+  it. The read-only block says so.
 
-### 10.10 Acceptance criteria for the GUI
+### 10.12 Acceptance criteria for the GUI
 
-1. Moving a control shows its spinner within 250 ms, and the spinner clears
-   within one poll interval of the change being drained.
-2. Superseding a pending change clears the earlier spinner without leaking a
-   `change_id` that never resolves.
-3. Closing the browser mid-performance changes nothing audible; reopening it
-   shows current values.
-4. Killing the engine with the page open shows disconnected within 1 s and
+1. Editing a control marks it dirty and changes nothing audible; Revert restores
+   the committed values.
+2. A submitted set applies entirely on one breath boundary, or not at all — no
+   breath ever runs with a partially applied set.
+3. A submission whose root is outside the selected mode is refused with a
+   named field, and nothing is applied.
+4. The countdown reaches zero within 250 ms of the set actually draining; if it
+   reaches zero first, the spinner appears.
+5. Closing the browser mid-performance changes nothing audible; reopening shows
+   current values.
+6. Killing the engine with the page open shows disconnected within 1 s and
    disables all controls.
-5. Bound to loopback, no non-loopback interface accepts a connection. With
+7. Bound to loopback, no non-loopback interface accepts a connection. With
    `--listen`, a request without the token is refused.
-6. Ten minutes of continuous polling with a page open shifts breath start times
+8. Ten minutes of continuous polling with a page open shifts breath start times
    by **< 5 ms** against a headless run of the same seed.
 
 ---
@@ -601,10 +715,11 @@ belvedere_drone/
   melody.py       # weighted walk + phrase shaping (§8)
   moods.py        # the weights table
   midi_out.py     # ALSA/JACK port, panic handler
-  control.py      # Controller: apply()/snapshot(), pending queue, session log (§10.3)
+  control.py      # Controller: stage()/submit()/snapshot(), session log (§10.3)
   cli.py          # v0 entry point
   web/            # v1 GUI (§10)
-    server.py     #   stdlib ThreadingHTTPServer: /state /set /start /stop, token auth
+    server.py     #   stdlib ThreadingHTTPServer: /state /submit /level /start /stop
+                  #   /regenerate, token auth
     static/       #   index.html, app.js, style.css — one page, no build step
 ```
 
@@ -622,9 +737,9 @@ dependency, and §10.5 gets that to zero.
 4. Measured output pitch of each pipe matches the profile's cents table within
    **±3 cents** (record GrandOrgue's output, run `dsp.detect_f0` seeded from the
    nominal note).
-5. Two runs with the same seed **and no control changes** produce
-   byte-identical MIDI streams; a run with control changes reproduces
-   byte-identically from seed + session log (§10.7).
+5. Two runs with the same seed **and no submissions** produce byte-identical
+   MIDI streams; a run with submissions reproduces byte-identically from
+   seed + session log (§10.9).
 6. No two consecutive breaths are identical in note sequence.
 
 ## 13. Spikes, in order
@@ -636,6 +751,9 @@ dependency, and §10.5 gets that to zero.
 | S3 | Hand-write a minimal ODF: one Rank, one pipe, one looped WAV, audible. | Verifies §4 attribute names; smallest proof of the sample path |
 | S4 | Does a Rank respond to MIDI velocity? | Whether breath layers need Stop-switching |
 | S5 | Run LoopAuditioneer batch over the 13 VCSL sustains; score with the QA gate. | Retires the §6 risk — or reopens it |
+| S6 | **Can intonation be a runtime control?** Hand-write an ODF with real-note key mapping and `AcceptsRetuning=Y`, ship the profile's cents table as a custom temperament, and switch it live. Check whether a 12-offsets-per-octave temperament can express the table at all, and whether selecting a non-original temperament forces a=440 (reported, unverified — RESEARCH.md §7). | §10.2 — turns intonation from a build-time setting into the app's most interesting knob, or confirms it can't be |
+| S7 | **Voicing round-trip.** Hand-voice a pipe in GrandOrgue, Save, and read the fine-tuning data back off disk into the profile. | Whether ear-voicing can feed §2's cents table — a read channel that isn't MIDI |
+| S8 | **Reverb tail vs. breath gap.** Render the same passage through IRs of ~1 s, ~2.5 s and ~6 s; check whether the breath cutoff (§5) still reads. | The reverb length ceiling in §3 |
 
 ## 14. Phasing
 
@@ -664,7 +782,8 @@ changes.
 ## 16. Non-goals
 
 Recording real instruments. Vibrato, bends, half-holing. File rendering or export
-(live only). Live blown input — that's
+(live only). Writing any audio effect: reverb is GrandOrgue's built-in
+convolution (§3), configured by the user, never a signal path of ours. Live blown input — that's
 [Smule's Ocarina](https://en.wikipedia.org/wiki/Ocarina_(app)), a different app.
 Ocarinas. Any claim of ethnographic authenticity beyond what `tuning_origin`
 records.
