@@ -469,3 +469,42 @@ and trust your ears against `inhale_s`.
 
 All need a plugin host (`jalv`, `carla`) and JACK wiring — an extra process and
 extra launch-script complexity that the built-in reverb avoids entirely.
+
+---
+
+## 9. The web GUI, measured against SPEC §10.12
+
+Verified against the running engine: the API by direct request, the page in a
+real browser. Numbers below are single measurements, not averages.
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | Editing marks dirty and changes nothing audible; Revert restores | **Pass** — two edited weights marked dirty, `committed` unchanged, Revert restores from the committed baseline |
+| 2 | A set applies entirely on one breath boundary, or not at all | **Pass** — polling at 20 Hz across the drain, **0** observations of a half-applied set |
+| 3 | A root outside the mode is refused with a named field, nothing applied | **Pass** — 422 with `root: the drone chamber cannot sound this note`, `committed.root` unchanged, nothing queued |
+| 4 | The countdown reaches zero within 250 ms of the drain | **Pass** — predicted 9.30 s, drained at 9.32 s, **12 ms** error |
+| 5 | Closing the browser changes nothing audible; reopening shows current values | **Pass** — four breaths played with no page open; the reopened page showed the engine's committed set and no dirty fields |
+| 6 | Killing the engine shows disconnected within 1 s and disables everything | **Pass** — banner at **50 ms**, every control disabled |
+| 7 | Loopback only unless `--token`; the token is checked on every request | **Pass** — a non-loopback bind without a token raises; `/state` returns 403 with no token and with a wrong one |
+| 8 | Ten minutes of polling shifts breath start times by < 5 ms | **Pass** — 73 breaths over 618 s against a headless run of the same seed: **worst drift 0.30 ms**, and every breath length identical |
+
+Criterion 4's spinner path never triggered, so the "countdown hit zero first"
+branch is written but unobserved.
+
+Two things the build changed, both from testing rather than from reading:
+
+- **The page must serialise its own polls.** At 4 Hz, two `/state` requests can
+  interleave, and the second can clear the state the first is about to read.
+  That showed up as a false "settings changed underneath you" banner after the
+  page's *own* submission drained.
+- **Panic must not close the MIDI port.** `MidiOut.panic` is the exit path and
+  is terminal by design; using it for the GUI's Panic button ended the
+  performance rather than silencing it. `MidiOut.silence` is the mid-performance
+  version, and `Controller.panic` stops the run and holds.
+
+Not built, and not claimed: **replay from seed + session log**. The engine
+appends every applied submission to a JSONL log as §10.9 requires, but nothing
+reads it back, so SPEC §12 criterion 5's submission half has no implementation.
+Mode and pulse have no controls either — the melody generator has no scale or
+pulse model to drive (§8), so a widget for them would be a widget that does
+nothing.

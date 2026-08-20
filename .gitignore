@@ -11,3 +11,4 @@ loops/
 build/
 tmp/
 vendor/
+.playwright-mcp/

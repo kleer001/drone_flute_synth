@@ -835,7 +835,7 @@ dependency, and §10.5 gets that to zero.
 | 2 | Killing the app (SIGINT and SIGKILL-then-restart) leaves no sounding drone. | **Partial** — the panic path (CC 123 + CC 120, signal handler, `atexit`) is asserted by `check`. SIGKILL cannot be caught by anything; recovery there depends on GrandOrgue, and is untested. |
 | 3 | Every generated loop passes `tools/loop_qa.py`: 60 s render envelope **CV < 0.02** and wrap discontinuity **< 3.0**. | **8/13** — unchanged; the S5 fixes moved metadata, not audio. The shipped profile uses one failing loop (F#5, wrap 4.5). |
 | 4 | Measured output pitch of each pipe matches the profile's cents table within **±3 cents** (record GrandOrgue's output, run `dsp.detect_f0` seeded from the nominal note). | **Not verified.** Needs GrandOrgue's audio output recorded, which needs a real audio device — it cannot be done from a headless session. |
-| 5 | Two runs with the same seed **and no submissions** produce byte-identical MIDI streams; a run with submissions reproduces byte-identically from seed + session log (§10.9). | **Pass** for the no-submission half — and a different seed is asserted to differ. The submission half has nothing to test until the GUI exists. |
+| 5 | Two runs with the same seed **and no submissions** produce byte-identical MIDI streams; a run with submissions reproduces byte-identically from seed + session log (§10.9). | **Pass** for the no-submission half — and a different seed is asserted to differ. The submission half is **not met**: the engine writes the session log on every applied set, but nothing reads it back, so a run with submissions has no replay path. |
 | 6 | No two consecutive breaths are identical in note sequence. | **Pass** over 60 breaths. |
 
 Run criteria 1, 2, 5 and 6 with:

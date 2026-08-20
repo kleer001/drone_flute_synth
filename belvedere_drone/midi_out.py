@@ -105,13 +105,25 @@ class MidiOut:
         self._sounding.clear()
         self.control_change(CC_ALL_NOTES_OFF, 0)
 
+    def silence(self):
+        """Stop everything sounding, but keep the port. Safe to call twice.
+
+        This is the GUI's Panic button (SPEC §10.7): the worst failure mode is
+        a stuck drone, and the cure for it must not also end the performance.
+        """
+        self.all_notes_off()
+        self.control_change(CC_ALL_SOUND_OFF, 0)
+
     def panic(self):
-        """Silence everything. Safe to call more than once."""
+        """Silence everything and close the port. Safe to call more than once.
+
+        This is the exit path -- normal exit, SIGINT/SIGTERM, and `atexit` --
+        so it is terminal by design. Use `silence` for a panic mid-performance.
+        """
         if self._panicked:
             return
         self._panicked = True
-        self.all_notes_off()
-        self.control_change(CC_ALL_SOUND_OFF, 0)
+        self.silence()
         self.port.close()
 
     def _on_signal(self, signum, frame):

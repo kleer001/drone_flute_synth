@@ -42,10 +42,16 @@ class Breath:
 class Performer:
     """Plans breaths. Holds no MIDI state; `cli` turns plans into messages."""
 
-    def __init__(self, profile, mood, rng, root=None):
+    def __init__(self, profile, mood, rng, root=None, breath_spread_s=None,
+                 inhale_s=None):
         self.profile = profile
         self.mood = mood
         self.rng = rng
+        # The profile supplies the defaults; the GUI can override them per
+        # submission (SPEC §10.7) without mutating an immutable profile.
+        self.breath_spread_s = (profile.breath_spread_s
+                                if breath_spread_s is None else breath_spread_s)
+        self.inhale_s = profile.inhale_s if inhale_s is None else inhale_s
         drone = profile.chambers["drone"]
         self.root = root or drone.notes[0]
         if self.root not in drone.notes:
@@ -66,10 +72,9 @@ class Performer:
     def next_breath(self):
         """Plan one breath. Never repeats the previous note sequence (§11.6)."""
         length = _clamp(
-            self.rng.gauss(self.mood.breath_mean_s, self.profile.breath_spread_s),
+            self.rng.gauss(self.mood.breath_mean_s, self.breath_spread_s),
             BREATH_CLAMP_S)
-        inhale = _clamp(self.rng.gauss(self.profile.inhale_s, 0.2),
-                        INHALE_CLAMP_S)
+        inhale = _clamp(self.rng.gauss(self.inhale_s, 0.2), INHALE_CLAMP_S)
         layer = self._choose_layer()
 
         # Redraw rather than mutate: mutating a phrase to force a difference

@@ -10,8 +10,7 @@ GrandOrgue 3.17.3 and plays a live breath-phrased performance over ALSA MIDI.
 The MIDI-side acceptance criteria pass; criterion 4 (measured output pitch)
 needs a real audio device and is unverified. All five spikes in SPEC §13 are
 done — RESEARCH.md §7 has the results, and several of them changed the spec.
-The web GUI specified in SPEC §10 is not built yet; the CLI is the only
-control surface.
+The web GUI of SPEC §10 is built: `--gui` serves it on `127.0.0.1:8737`.
 
 ## Layout
 
@@ -23,7 +22,7 @@ control surface.
 | `tools/analyze_samples.py` | Inventory a sample folder: format, usable steady state, pitch accuracy vs. nominal |
 | `tools/loop_qa.py` | Acceptance gate (SPEC §12 criterion 3). Exits non-zero on failure |
 | `tools/loopfind.py` | Loop finder. Writes the `smpl` chunk GrandOrgue reads, so it is the build path — LoopAuditioneer turned out to be GUI-only (RESEARCH.md §7, S5) |
-| `belvedere_drone/` | The app: profile loading, ODF generation, breath and melody scheduling, MIDI out, CLI |
+| `belvedere_drone/` | The app: profile loading, ODF generation, breath and melody scheduling, MIDI out, control seam, web GUI, CLI |
 | `profiles/` | Instrument profiles, one TOML each (SPEC §7) |
 
 `tools/` imports only numpy, scipy, and its own `dsp` module — no package
@@ -44,11 +43,19 @@ python3 tools/loop_qa.py <out_dir>/*.wav
 python3 -m belvedere_drone.cli odf profiles/naf-double-drone-as.toml build
 python3 -m belvedere_drone.cli check profiles/naf-double-drone-as.toml --out-dir build
 python3 -m belvedere_drone.cli play profiles/naf-double-drone-as.toml --out-dir build --mood pastoral
+
+# the same performance with the web control surface (SPEC §10)
+python3 -m belvedere_drone.cli play profiles/naf-double-drone-as.toml --out-dir build --gui
 ```
 
 `play` needs GrandOrgue running with the generated organ loaded; it finds the
 `GrandOrgue` ALSA port by name. `--dry-run` records the MIDI stream instead of
 opening a port, which is how the determinism criteria are tested.
+
+The engine is authoritative and headless: `control.Controller` owns the
+performance and both `cli.py` and `web/server.py` are clients of it. Nothing in
+`control.py` imports the server, and the server never touches the scheduler
+thread, the MIDI port, or the panic path.
 
 There is no test suite. Verification is measurement, and there are two gates:
 `loop_qa.py` for the sample side, and `cli.py check` for the MIDI side. A change

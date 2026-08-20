@@ -11,36 +11,14 @@ import argparse
 import json
 import random
 import sys
-import time
 from pathlib import Path
 
-from . import breath, moods, odfgen, samples, profile as profile_mod
-from .midi_out import CC_BREATH_LEVEL, MidiOut
+from . import breath, control, moods, odfgen, samples, profile as profile_mod
+from .midi_out import MidiOut
 
-# Enclosure/CC 11 gives continuous level within a breath; the breath opens and
-# closes rather than switching on, which is most of what makes it read as air.
-BREATH_ATTACK_S = 0.25
-BREATH_RELEASE_S = 0.35
-LEVEL_STEPS = 24
-
-
-def _events_for_breath(plan, keys_drone, keys_melody):
-    """Flatten one breath into (offset_s, kind, payload), time-ordered."""
-    events = [(0.0, "note_on", (keys_drone[plan.drone_note],
-                                breath.LAYER_VELOCITY[plan.layer]))]
-    for i in range(LEVEL_STEPS + 1):
-        t = BREATH_ATTACK_S * i / LEVEL_STEPS
-        events.append((t, "cc", (CC_BREATH_LEVEL, int(127 * i / LEVEL_STEPS))))
-    for note in plan.melody_notes:
-        key = keys_melody[note.name]
-        events.append((note.start_s, "note_on", (key, note.velocity)))
-        events.append((note.start_s + note.dur_s, "note_off", (key,)))
-    for i in range(LEVEL_STEPS + 1):
-        t = plan.length_s - BREATH_RELEASE_S + BREATH_RELEASE_S * i / LEVEL_STEPS
-        events.append((max(t, 0.0), "cc",
-                       (CC_BREATH_LEVEL, int(127 * (1 - i / LEVEL_STEPS)))))
-    events.sort(key=lambda e: e[0])
-    return events
+# The scheduler lives in control.Controller so the CLI and the web GUI drive
+# the same engine (SPEC §10.3).
+_events_for_breath = control.events_for_breath
 
 
 def _load_keys(profile, out_dir):
@@ -77,64 +55,43 @@ def cmd_play(args):
     prof = profile_mod.load(args.profile)
     mood = moods.get(args.mood)
     seed = args.seed if args.seed is not None else random.randrange(2 ** 31)
-    rng = random.Random(seed)
     keys_drone, keys_melody = _load_keys(prof, args.out_dir)
 
     out = MidiOut(port_name=args.port, channel=args.channel,
                   dry_run=args.dry_run)
-    performer = breath.Performer(prof, mood, rng, root=args.root)
+    engine = control.Controller(prof, mood.name, seed, keys_drone, keys_melody,
+                                out, args.out_dir, root=args.root)
 
     print(f"profile : {prof.display}")
     print(f"tuning  : {prof.provenance_line()}")
     print(f"mood    : {mood.name}")
     print(f"seed    : {seed}          <- reproduces this performance")
     print(f"port    : {out.port_name}")
+
+    if args.gui:
+        from .web import server as web_server
+        web_server.serve(engine, host=args.http_host, port=args.http_port,
+                         token=args.token)
+        url = f"http://{args.http_host}:{args.http_port}/"
+        if args.token:
+            url += f"?token={args.token}"
+        print(f"gui     : {url}")
     print()
     sys.stdout.flush()
 
-    started = time.monotonic()
-    virtual = 0.0
-    try:
-        while True:
-            if args.max_breaths and performer._index >= args.max_breaths:
-                break
-            if args.duration_s and virtual >= args.duration_s:
-                break
-            plan = performer.next_breath()
-            events = _events_for_breath(plan, keys_drone, keys_melody)
-            base = virtual
-            for offset, kind, payload in events:
-                target = base + offset
-                if not args.dry_run:
-                    delay = (started + target) - time.monotonic()
-                    if delay > 0:
-                        time.sleep(delay)
-                if kind == "note_on":
-                    out.note_on(*payload)
-                elif kind == "note_off":
-                    out.note_off(*payload)
-                else:
-                    out.control_change(*payload)
-            virtual = base + plan.length_s
-            if not args.dry_run:
-                delay = (started + virtual) - time.monotonic()
-                if delay > 0:
-                    time.sleep(delay)
-            out.all_notes_off()
-            virtual += plan.inhale_s
-            if not args.dry_run:
-                delay = (started + virtual) - time.monotonic()
-                if delay > 0:
-                    time.sleep(delay)
-            print(f"breath {plan.index:4d}  {plan.length_s:5.2f}s  "
-                  f"{plan.layer:7}  {' '.join(plan.note_sequence())}")
-            sys.stdout.flush()
-    finally:
-        out.panic()
+    def report(plan):
+        print(f"breath {plan.index:4d}  {plan.length_s:5.2f}s  "
+              f"{plan.layer:7}  {' '.join(plan.note_sequence())}")
+        sys.stdout.flush()
+
+    engine.run(on_breath=report, max_breaths=args.max_breaths,
+               duration_s=args.duration_s,
+               # A countdown over a virtual clock is meaningless, so a GUI run
+               # keeps real time even when no MIDI port is open.
+               realtime=args.gui or not args.dry_run)
 
     if args.dry_run:
-        print(f"\n{len(out.port.messages)} MIDI messages, "
-              f"{virtual:.1f}s of virtual performance")
+        print(f"\n{len(out.port.messages)} MIDI messages")
         if out.sounding:
             print(f"FAIL: {len(out.sounding)} notes still sounding")
             return 1
@@ -254,6 +211,12 @@ def main(argv=None):
                    help="no MIDI port, no sleeping; record the stream instead")
     p.add_argument("--max-breaths", type=int)
     p.add_argument("--duration-s", type=float)
+    p.add_argument("--gui", action="store_true",
+                   help="serve the web control surface (SPEC §10)")
+    p.add_argument("--http-port", type=int, default=8737)
+    p.add_argument("--http-host", default="127.0.0.1",
+                   help="anything but loopback requires --token")
+    p.add_argument("--token", help="required to bind a non-loopback address")
     p.set_defaults(func=cmd_play)
 
     p = sub.add_parser("check", help="run the MIDI-side acceptance criteria")

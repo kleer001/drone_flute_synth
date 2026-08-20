@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>belvedere drone</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="disconnected" class="banner bad" hidden>
+  Disconnected from the engine. The performance may still be running.
+</div>
+<div id="clash" class="banner warn" hidden>
+  Settings changed underneath you — another tab submitted.
+  <button id="keep-editing" class="link">Keep editing</button>
+  <button id="discard" class="link">Discard mine and reload</button>
+</div>
+
+<header>
+  <h1 id="display">belvedere drone</h1>
+  <p id="provenance" class="muted"></p>
+</header>
+
+<section class="transport">
+  <h2>Transport <span class="muted">— live, no submit</span></h2>
+  <div class="row">
+    <button id="runbtn" class="primary">Stop</button>
+    <label class="grow">Master level
+      <input type="range" id="level" min="0" max="127" step="1">
+      <output id="level-out"></output>
+    </label>
+    <button id="panic" class="danger">Panic</button>
+  </div>
+  <p class="muted" id="engine-line"></p>
+</section>
+
+<section class="panel">
+  <h2>Performance</h2>
+
+  <div class="grid">
+    <label>Drone root
+      <select id="root"></select>
+    </label>
+    <label>Mood preset
+      <select id="mood"></select>
+    </label>
+    <label>Seed
+      <span class="inline">
+        <input type="text" id="seed" inputmode="numeric">
+        <button id="reseed" class="link">Reseed</button>
+      </span>
+    </label>
+  </div>
+
+  <h3>Mood weights</h3>
+  <div class="grid" id="weights"></div>
+
+  <h3>Breath</h3>
+  <div class="grid" id="breath"></div>
+
+  <div id="errors" class="banner bad" hidden></div>
+
+  <div class="row submit-row">
+    <button id="submit" class="primary" disabled>Submit</button>
+    <button id="revert" disabled>Revert</button>
+    <span id="status" class="status"></span>
+  </div>
+</section>
+
+<section class="readonly">
+  <h2>Not ours to drive</h2>
+  <dl id="ro"></dl>
+  <p class="muted">
+    Intonation (temperament), per-pipe voicing and reverb are switched in
+    <strong>GrandOrgue's own window</strong>. They are live, and invisible to
+    this page — whatever it last knew about them may be wrong.
+  </p>
+  <div class="row">
+    <button id="regenerate">Regenerate ODF</button>
+    <span id="regen-note" class="status"></span>
+  </div>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>

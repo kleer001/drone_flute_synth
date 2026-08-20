@@ -20,7 +20,7 @@ two of them changed the design, including the one the project was built around
 | `tools/analyze_samples.py` | Inventory a sample folder: format, usable steady state, pitch accuracy vs. nominal |
 | `tools/loop_qa.py` | **Acceptance gate** — reads `smpl` loop points, tiles to 60 s, scores pulsing and wrap discontinuity |
 | `tools/loopfind.py` | Loop finder. Writes the `smpl` chunk GrandOrgue reads, so it *is* the build path — LoopAuditioneer turned out to be GUI-only |
-| `belvedere_drone/` | The app — profile loading, ODF generation, sample staging, breath and melody scheduling, MIDI out, CLI |
+| `belvedere_drone/` | The app — profile loading, ODF generation, sample staging, breath and melody scheduling, MIDI out, web control surface, CLI |
 | `profiles/` | Instrument profiles, one TOML each |
 
 ## Scope
@@ -75,6 +75,13 @@ Load `build/naf-double-drone-as.organ` in GrandOrgue first; `play` finds the
 `GrandOrgue` ALSA port by name. `--dry-run` records the MIDI stream instead of
 opening a port. Every performance prints its seed, and the seed reproduces it
 byte for byte.
+
+Add `--gui` for the web control surface on `http://127.0.0.1:8737/` — root,
+mood, the eight mood weights, breath shape and seed, edited as a working copy
+and submitted as a set that lands whole on the next breath boundary. The
+transport strip (start/stop, master level, panic) is live and bypasses submit.
+It costs no extra dependency: stdlib HTTP server, one static page. Closing the
+tab does not stop the performance.
 
 ## Intonation: what spike S1 found
 
