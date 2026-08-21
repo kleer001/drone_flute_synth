@@ -86,13 +86,12 @@ cents = { "D4" = 3.91, "E4" = -13.69, "F#4" = -9.78, "A#4" = -3.91, "C5" = 0.0, 
 samples = {}
 
 [meter]
-# The instrument's clock. A breath resolves to a bar line: the phrase sounds
-# for whole beats, the player breathes on the last of them, and the next phrase
-# starts on a downbeat -- which is how a wind player actually phrases.
+# The bar. A breath resolves to a bar line: the phrase sounds for whole beats,
+# the player breathes on the last of them, and the next phrase starts on a
+# downbeat -- which is how a wind player actually phrases.
 #
-# 84 bpm puts the eighth note at 357 ms, the subdivision a flute line can be
-# read at without the ear losing the beat.
-bpm = 84
+# Tempo is not here. It belongs to the mood, because how fast this instrument
+# moves is a question about the piece being played, not about the flute.
 beats_per_measure = 4
 
 [breath]

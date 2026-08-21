@@ -32,17 +32,19 @@ NUMERIC_PARAMS = {
     "pushed_bias": (0.0, 1.0),
     "trill_rate": (0.0, 1.0),
     "call_response": (0.0, 1.0),
+    "bpm": (40.0, 160.0),
     "breath_mean_s": breath.BREATH_CLAMP_S,
     "breath_spread_s": (0.0, 5.0),
     "inhale_s": breath.INHALE_CLAMP_S,
 }
 
-# The eight that §8's table calls the mood, in its order. `breath_mean_s` is
-# one of them, so the breath panel owns only spread and inhale -- two controls
+# What §8's table calls the mood, in its order. `breath_mean_s` and `bpm` are
+# among them, so the breath panel owns only spread and inhale -- two controls
 # writing one value would make "committed" ambiguous.
 MOOD_WEIGHTS = ("notes_per_breath", "step_leap_ratio", "ornament_rate",
                 "cadence_strength", "register_bias", "sweep_depth",
-                "pushed_bias", "trill_rate", "call_response", "breath_mean_s")
+                "pushed_bias", "trill_rate", "call_response", "bpm",
+                "breath_mean_s")
 
 BREATH_ATTACK_S = 0.25
 BREATH_RELEASE_S = 0.35
@@ -75,6 +77,7 @@ def _mood_from(name, weights):
         pushed_bias=weights["pushed_bias"],
         trill_rate=weights["trill_rate"],
         call_response=weights["call_response"],
+        bpm=weights["bpm"],
         breath_mean_s=weights["breath_mean_s"],
         phrase_shape=preset.phrase_shape)
 
@@ -130,6 +133,7 @@ class Controller:
             "pushed_bias": float(preset.pushed_bias),
             "trill_rate": float(preset.trill_rate),
             "call_response": float(preset.call_response),
+            "bpm": float(preset.bpm),
             "breath_mean_s": float(preset.breath_mean_s),
             "breath_spread_s": float(profile.breath_spread_s),
             "inhale_s": float(profile.inhale_s),

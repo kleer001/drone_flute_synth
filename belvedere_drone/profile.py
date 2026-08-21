@@ -50,10 +50,14 @@ class Chamber:
 
 
 class Meter:
-    """The instrument's one global clock: a tempo and a bar length.
+    """The clock a performance runs on: a tempo and a bar length.
 
     Breaths resolve to bar lines rather than inventing a grid each time, so
     every phrase in a performance is commensurable with every other one.
+
+    The two halves come from different places. The bar belongs to the
+    instrument and lives in the profile; the tempo belongs to the mood, so
+    changing mood changes the beat and the GUI can move it live.
 
     The unit is the eighth note. Motif durations are whole units, and the
     conventional values a phrase can use -- eighth through whole -- are counts
@@ -137,10 +141,12 @@ class Profile:
 
         if "meter" not in data:
             raise ValueError(
-                f"{path}: profile needs a [meter] table with bpm and "
-                f"beats_per_measure")
-        m = data["meter"]
-        self.meter = Meter(m["bpm"], m["beats_per_measure"])
+                f"{path}: profile needs a [meter] table with beats_per_measure")
+        self.beats_per_measure = int(data["meter"]["beats_per_measure"])
+        if self.beats_per_measure < 1:
+            raise ValueError(
+                f"{path}: beats_per_measure must be at least 1, got "
+                f"{self.beats_per_measure}")
 
         b = data["breath"]
         self.breath_mean_s = float(b["mean_s"])

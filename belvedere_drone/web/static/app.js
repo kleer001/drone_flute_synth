@@ -16,12 +16,16 @@ const LABELS = {
   pushed_bias: "pushed bias",
   trill_rate: "trill",
   call_response: "call / answer",
+  bpm: "tempo",
   breath_mean_s: "breath mean",
   breath_spread_s: "breath spread",
   inhale_s: "inhale gap",
 };
 const DECIMALS = { notes_per_breath: 1, breath_mean_s: 1,
-                   breath_spread_s: 1, inhale_s: 2 };
+                   breath_spread_s: 1, inhale_s: 2, bpm: 0 };
+// Tempo is counted in whole beats per minute; the derived step would put it on
+// half-beats.
+const STEPS = { bpm: 1 };
 const BREATH_FIELDS = ["breath_spread_s", "inhale_s"];
 
 const $ = (id) => document.getElementById(id);
@@ -60,7 +64,7 @@ async function api(path, body) {
 
 function slider(name) {
   const [lo, hi] = ranges[name];
-  const step = (hi - lo) > 6 ? 0.5 : 0.01;
+  const step = STEPS[name] ?? ((hi - lo) > 6 ? 0.5 : 0.01);
   const row = document.createElement("div");
   row.className = "param";
   row.dataset.field = name;

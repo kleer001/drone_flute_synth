@@ -304,9 +304,14 @@ loop:
 Both chambers release on the same event, so GrandOrgue's release samples produce
 the true simultaneous cutoff.
 
-**The breath is still the phrase unit; the bar is the grid it lands on.** The
-profile carries a `[meter]` — a tempo and a bar length — and a breath cycle is
-a whole number of bars. The player breathes on the last beats of the bar and
+**The breath is still the phrase unit; the bar is the grid it lands on.** A
+breath cycle is a whole number of bars. The clock has two halves and they come
+from different places: the profile's `[meter]` gives `beats_per_measure`,
+because the bar belongs to the instrument, and the mood gives `bpm`, because
+how fast the thing moves is a question about the piece rather than the flute.
+Tempo is therefore a mood weight like any other — it has a slider, a preset
+value per mood, and it applies on a breath boundary through the same
+submit-gated seam (§10.7). The player breathes on the last beats of the bar and
 the next phrase enters on a downbeat, which is how a wind player phrases. The
 beat therefore runs unbroken through the inhale, and every phrase in a
 performance is commensurable with every other one.

@@ -15,6 +15,7 @@ the same schedule can be played live or collected byte-for-byte in a dry run.
 That is what makes acceptance criteria 5 and 6 testable.
 """
 from . import melody
+from .profile import Meter
 
 BREATH_CLAMP_S = (3.0, 14.0)
 INHALE_CLAMP_S = (0.3, 1.6)
@@ -63,6 +64,8 @@ class Performer:
             raise ValueError(
                 f"drone chamber cannot sound {self.root!r}; it has "
                 f"{drone.notes}")
+        # The bar comes from the instrument, the tempo from the mood.
+        self.meter = Meter(mood.bpm, profile.beats_per_measure)
         self.melody_notes = sorted(
             profile.chambers["melody"].notes, key=melody.midi_of)
         # The motif lives here rather than in a single breath: restating it
@@ -86,7 +89,7 @@ class Performer:
 
         Returns (sounding seconds, inhale seconds), both whole beats.
         """
-        meter = self.profile.meter
+        meter = self.meter
         measures = max(1, round((sound_target_s + inhale_target_s)
                                 / meter.measure_s))
         cycle_beats = measures * meter.beats_per_measure
@@ -108,7 +111,7 @@ class Performer:
         # would bias the note distribution in a way that is hard to reason
         # about. Redrawing keeps the walk's statistics intact.
         for _ in range(8):
-            notes = self.phrasing.breath(self.mood, self.profile.meter, length,
+            notes = self.phrasing.breath(self.mood, self.meter, length,
                                          LAYER_VELOCITY[layer])
             sequence = tuple(n.name for n in notes if not n.is_grace)
             if sequence != self._last_sequence:
