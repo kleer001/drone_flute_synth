@@ -535,9 +535,16 @@ schedule_melody(breath_len, mood):
     cadence: land the last note on a strong rest point and lengthen it
 ```
 
-**Breaths alternate call and answer.** A call sits lower in the range, stays
-plainer and usually leaves the phrase unresolved; the answer climbs, takes the
-ornaments and lands on a rest point. `call/answer contrast` sets how far apart
+**Breaths alternate call and answer, and the answer quotes the call.** A call
+sits lower in the range, stays plainer and usually leaves the phrase unresolved;
+the answer climbs, takes the ornaments and lands on a rest point. The answer's
+material is always a transformation of what the call just played -- sequence,
+inversion, retrograde or fragment, the transformations that read as a reply
+rather than as development -- never fresh material, so the two breaths are
+demonstrably about the same thing. A restated call is varied rather than
+photocopied; returning the cell verbatim gave unity with nothing developing,
+which is its own kind of monotony. A pair's material is reused two or three
+times before anything new is invented. `call/answer contrast` sets how far apart
 the two sit, and at 0 every breath is treated alike. A held note may be
 **trilled** — shaken against its upper neighbour and resolved back onto itself —
 at `trill rate`, which the answer raises and the call lowers.

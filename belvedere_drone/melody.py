@@ -132,6 +132,18 @@ TRANSFORMS = (
 # without it the transformations have nothing to vary from.
 TRANSFORM_WEIGHTS = (4, 3, 2, 2, 1, 1, 2)
 
+# An answer is a reply, not development: restating the call higher, mirroring
+# it, or running it backwards all read as a response to what was just said.
+# Augmentation and diminution stretch material rather than answer it.
+ANSWER_TRANSFORMS = ("sequence", "invert", "retrograde", "fragment")
+ANSWER_WEIGHTS = (3, 3, 2, 2)
+
+# Developing variation: a restated call is varied, not photocopied. Returning
+# the cell verbatim made every call breath in a run sound the same -- unity
+# with nothing developing, which is monotony wearing a different hat.
+RESTATE_TRANSFORMS = ("repeat", "sequence", "fragment", "diminish")
+RESTATE_WEIGHTS = (2, 4, 2, 1)
+
 
 def _arch(position):
     """0 at the phrase edges, 1 at the climax -- a rise and a longer fall."""
@@ -148,7 +160,10 @@ class Phrasing:
         self.notes = notes
         self.root = root
         self.stability = stability(notes, root)
-        self.motif = None
+        self.motif = None          # the current pair's cell
+        self.call_motif = None     # what the answer must quote
+        self.base = None           # the cell this breath is working with
+        self.relation = "new"      # how this breath relates to the last
         self.statements = 0
         # Breaths alternate roles: a call that leaves the line open, then an
         # answer that ornaments it and resolves. Tension and release as a
@@ -181,17 +196,42 @@ class Phrasing:
             pos = -pos if pos < 0 else 2 * top - pos
         return pos
 
-    def _next_motif(self, mood):
-        """Rule of three: state an idea about three times, then move on."""
-        if self.motif is None or self.statements >= self.rng.choice((3, 3, 4)):
-            self.motif = new_motif(self.rng, mood)
-            self.statements = 0
-            return self.motif
-        self.statements += 1
+    def begin_breath(self, mood, answering):
+        """Choose the material this breath works with.
+
+        Two levels of unity. Across a pair, an **answer quotes its call**: it is
+        always a transformation of the call's own cell, never fresh material, so
+        the two breaths are demonstrably talking about the same thing. Across
+        pairs, the rule of three -- a pair's material is reused about three
+        times before anything new is invented.
+        """
+        if answering and self.call_motif is not None:
+            pick = self.rng.choices(ANSWER_TRANSFORMS,
+                                    weights=ANSWER_WEIGHTS)[0]
+            self.base = dict(TRANSFORMS)[pick](self.call_motif, self.rng)
+            self.relation = pick
+        else:
+            if self.motif is None or self.statements >= self.rng.choice((2, 2, 3)):
+                self.motif = new_motif(self.rng, mood)
+                self.statements = 0
+                self.base = self.motif
+                self.relation = "new"
+            else:
+                self.statements += 1
+                pick = self.rng.choices(RESTATE_TRANSFORMS,
+                                        weights=RESTATE_WEIGHTS)[0]
+                self.base = dict(TRANSFORMS)[pick](self.motif, self.rng)
+                self.relation = pick
+            # The answer replies to what was actually just played, not to the
+            # canonical cell it came from.
+            self.call_motif = self.base
+        return self.base
+
+    def _restate(self):
+        """A later statement inside one breath: vary the breath's own cell."""
         names = [n for n, _ in TRANSFORMS]
         pick = self.rng.choices(names, weights=TRANSFORM_WEIGHTS)[0]
-        fn = dict(TRANSFORMS)[pick]
-        return fn(self.motif, self.rng)
+        return dict(TRANSFORMS)[pick](self.base, self.rng)
 
     # -- ornaments --------------------------------------------------------
 
@@ -279,6 +319,9 @@ class Phrasing:
         centre = ((len(self.notes) - 1) * (0.5 + mood.register_bias * 0.35)
                   + span * (0.5 if answering else -0.5) * contrast)
 
+        base = self.begin_breath(mood, answering)
+        first_statement = True
+
         scheduled = []
         pos = self._clamp(int(round(centre)))
         at = 0                                     # current pulse
@@ -286,9 +329,10 @@ class Phrasing:
         prev_pos = pos
 
         while at < pulses - 1 and placed < budget:
-            motif = self._next_motif(mood)
+            motif = base if first_statement else self._restate()
+            first_statement = False
             # Follow the arch: transpose this statement toward the contour.
-            target = centre + span * (_arch(at / pulses) * 2.0 - 1.0) * 0.9
+            target = centre + span * (_arch(at / pulses) * 2.0 - 1.0) * 0.55
             pos = self._fold(int(round(target)))
 
             for step, dur in motif:
@@ -340,6 +384,7 @@ class Phrasing:
                 last.name = self.notes[home]
                 last.dur_s = max(last.dur_s, pulse_s * 1.6 * ARTICULATION)
 
-        self.last_role, self.role = self.role, "call" if answering else "answer"
+        self.last_role = f'{self.role}:{self.relation}'
+        self.role = "call" if answering else "answer"
         scheduled.sort(key=lambda n: n.start_s)
         return scheduled
