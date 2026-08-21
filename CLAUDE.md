@@ -30,6 +30,10 @@ install, no cross-repo dependency. Scripts run directly from a checkout.
 
 ## Running
 
+`./run.sh` is the entry point: it fetches what is missing, builds the organ,
+starts GrandOrgue, serves the GUI on the first free port at or above 8737, and
+plays. The steps below are the same thing done by hand.
+
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt

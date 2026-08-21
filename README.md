@@ -63,7 +63,14 @@ build script. Thresholds: 60-second render envelope `CV < 0.02` (level pulsing)
 and `wrap < 3.0` (splice discontinuity, as a multiple of the loop's own typical
 sample-to-sample step).
 
-Build the organ, check it, and play it:
+The one-command path — fetches GrandOrgue and the samples if they are missing,
+builds the organ, starts everything and opens the control surface:
+
+```bash
+./run.sh                 # or --mood restless, --seed 42, --no-gui, --help
+```
+
+Or the same steps by hand:
 
 ```bash
 python3 -m belvedere_drone.cli odf   profiles/recorder-drone-c.toml build --loops <out_dir>

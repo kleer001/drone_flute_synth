@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 #
 # Launch the drone flute: fetch what's missing, build the organ, start
-# GrandOrgue, and play into it.
+# GrandOrgue, open the control surface, and play.
 #
-#   ./run.sh                      play forever, contemplative
+#   ./run.sh                      play forever with the GUI, contemplative
 #   ./run.sh --mood restless      pick a mood
 #   ./run.sh --seed 42            reproduce a performance exactly
 #   ./run.sh --duration 60        stop after 60 seconds
-#   ./run.sh --dry-run            no GrandOrgue, no audio; print the performance
+#   ./run.sh --no-gui             player only, no web control surface
+#   ./run.sh --http-port 9000     ask for a particular GUI port
+#   ./run.sh --dry-run            no GrandOrgue, no audio, no GUI; print it
 #   ./run.sh --rebuild            rebuild loops and organ from scratch
 #
+# The GUI takes the first free port at or above 8737 and opens in a browser.
 # Everything it downloads goes in vendor/ and everything it builds goes in
 # build/; both are gitignored. Nothing is installed system-wide and nothing
 # needs root.
@@ -34,6 +37,8 @@ SEED=""
 DURATION=""
 DRY_RUN=0
 REBUILD=0
+GUI=1
+HTTP_PORT=8737
 PLAY_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -43,7 +48,12 @@ while [[ $# -gt 0 ]]; do
         --duration) DURATION="$2"; shift 2 ;;
         --dry-run)  DRY_RUN=1; shift ;;
         --rebuild)  REBUILD=1; shift ;;
-        -h|--help)  sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; exit 0 ;;
+        --no-gui)   GUI=0; shift ;;
+        --http-port) HTTP_PORT="$2"; shift 2 ;;
+        # Print the header comment rather than a fixed line range, so editing
+        # the help above cannot silently truncate it.
+        -h|--help)  awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next }
+                         NR>1 { exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
         *)          echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
     esac
 done
@@ -96,6 +106,22 @@ PLAY_ARGS=(--out-dir "$BUILD" --mood "$MOOD")
 [[ -n "$SEED" ]]     && PLAY_ARGS+=(--seed "$SEED")
 [[ -n "$DURATION" ]] && PLAY_ARGS+=(--duration-s "$DURATION")
 
+# The house rule: never hard-bind. A leftover process on 8737 would otherwise
+# kill the launch with "Address already in use".
+free_port() {
+    "$PY" - "$1" <<'PYEOF'
+import socket, sys
+first = int(sys.argv[1])
+for port in range(first, first + 40):
+    with socket.socket() as probe:
+        if probe.connect_ex(("127.0.0.1", port)) != 0:
+            print(port)
+            break
+else:
+    sys.exit(f"no free port in {first}..{first + 39}")
+PYEOF
+}
+
 if [[ $DRY_RUN -eq 1 ]]; then
     say "Dry run — no GrandOrgue, no audio"
     [[ -n "$DURATION" ]] || PLAY_ARGS+=(--max-breaths 12)
@@ -139,6 +165,19 @@ done
 
 # The organ still has to finish loading its samples after the port appears.
 sleep 3
+
+if [[ $GUI -eq 1 ]]; then
+    PORT="$(free_port "$HTTP_PORT")"
+    [[ "$PORT" != "$HTTP_PORT" ]] && say "port $HTTP_PORT is busy — using $PORT"
+    PLAY_ARGS+=(--gui --http-port "$PORT")
+    URL="http://127.0.0.1:$PORT/"
+    say "Control surface: $URL"
+    # The player blocks, so hand the browser off to the background and give the
+    # server a moment to bind first.
+    if [[ -n "${DISPLAY:-}" ]] && command -v xdg-open >/dev/null; then
+        ( sleep 2; xdg-open "$URL" >/dev/null 2>&1 || true ) &
+    fi
+fi
 
 say "Playing — Ctrl-C to stop"
 "$PY" -m belvedere_drone.cli play "$PROFILE" "${PLAY_ARGS[@]}"
