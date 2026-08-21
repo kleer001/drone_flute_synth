@@ -61,11 +61,27 @@ samples = { "C3" = "C4" }
 
 [chambers.melody]
 holes = 6
-# Harmonics 8 9 10 11 12 14 16 of C -- and, not by coincidence, seven of the
-# thirteen pitches VCSL recorded.
-notes = ["C5", "D5", "E5", "F#5", "G5", "A#5", "C6"]
+# The upper octave is harmonics 8 9 10 11 12 14 16 of C -- and, not by
+# coincidence, seven of the thirteen pitches VCSL recorded.
+#
+# The octave below it is the same degrees again, minus two that cannot be had
+# honestly:
+#
+#   G4  VCSL never recorded it. It is the lower octave's perfect fifth, and
+#       the only sources for it are G#4 down a semitone or G5 down an octave.
+#       Both are transposed pipes, and this chamber borrows nothing, so the
+#       fifth is simply absent down there.
+#   C4  recorded, but its loop does not pass tools/loop_qa.py -- CV 0.0203
+#       against a 0.02 threshold, the one failure left in the set. The drone
+#       chamber uses C4 knowingly; the melody does not, so the walk's bottom
+#       note is D4.
+#
+# The walk therefore has eleven pitches with an uneven lower octave, which is
+# what an instrument with these holes and these recordings actually offers.
+notes = ["D4", "E4", "F#4", "A#4", "C5", "D5", "E5", "F#5", "G5", "A#5", "C6"]
 # Deviation from 12-TET, in cents. THE primary artifact of this file.
-cents = { "C5" = 0.0, "D5" = 3.91, "E5" = -13.69, "F#5" = -9.78, "G5" = 1.96, "A#5" = -3.91, "C6" = 0.0 }
+# Just ratios are octave-invariant, so each pitch class repeats its deviation.
+cents = { "D4" = 3.91, "E4" = -13.69, "F#4" = -9.78, "A#4" = -3.91, "C5" = 0.0, "D5" = 3.91, "E5" = -13.69, "F#5" = -9.78, "G5" = 1.96, "A#5" = -3.91, "C6" = 0.0 }
 # No pitch-fill: every note above is recorded, so nothing borrows.
 samples = {}
 
