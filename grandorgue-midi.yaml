@@ -1,0 +1,16 @@
+---
+info:
+  content-type: MIDI Settings
+  organ-name: Drone flute in C, just intonation, no borrowed samples
+  grandorgue-version: v3.17.3-1
+objects:
+  - path: manuals/001
+    name: Flute
+    receive:
+      - event_type: Note
+        channel: 1
+        transpose: 0
+        low_key: 0
+        high_key: 127
+        low_value: 1
+        high_value: 127

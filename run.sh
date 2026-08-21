@@ -182,11 +182,10 @@ fi
 cat <<'NOTE'
 
   ---------------------------------------------------------------------
-  FIRST RUN ONLY -- GrandOrgue ignores MIDI until you teach it a manual.
-  In the GrandOrgue window, right-click the keyboard and choose
-  "Listen for events", wait for this player to send a note, then OK.
-  Set Lowest velocity to 1 if it offers 0, or note-offs are ignored.
-  GrandOrgue remembers it; you will not have to do this again.
+  FIRST RUN ONLY -- teach GrandOrgue to accept our notes:
+    Audio/MIDI -> MIDI Objects -> Import -> grandorgue-midi.yaml
+  Then File -> Save so it sticks. Without it the manual has a receiver
+  whose key and velocity ranges are empty, and every note is dropped.
   ---------------------------------------------------------------------
 
 NOTE

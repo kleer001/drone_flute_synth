@@ -371,43 +371,37 @@ The fix is to pad any rank below two pipes with a `DUMMY` entry, which
 
 ### Why no MIDI note produced sound, and what fixes it
 
-GrandOrgue **ignores incoming notes until a manual has a MIDI receiver bound to
-it.** `GOMidiReceiver::Load` reads `NumberOfMIDIEvents` with a default of 0, and
-a receiver with no events matches nothing, so a fresh install is deaf by design.
-This is not a bug and not our ODF's fault; it is how the program works, and it
-is the single reason this app made no sound for its whole first life.
+Resolved: the app now plays through GrandOrgue, verified by recording the real
+output device while the real player ran -- 28.7 s, peak 0.049, with the inhale
+gaps visible as drops to ~0.0005. Three separate things were wrong, and one of
+them was the diagnosis itself.
 
-Verified, so the transport is not the problem: with the player running,
-`aconnect -l` shows our client subscribed to GrandOrgue's input port. The events
-arrive. Nothing consumes them.
+**1. The ODF never declared `MIDIInputNumber`.** GrandOrgue's bundled ODF
+reference, Manual objects: *"MIDIInputNumber (integer 0-200, default: 0) ... 0
+means no association. 1 maps to pedal, 2 to first manual."* Omitting it left the
+manual associated with nothing, so no MIDI configuration could attach to it.
+Note that 1 is the **pedal** -- a single-manual organ is 2, and its Initial MIDI
+slot is `MidiInitial002`, not 001.
 
-The Rosegarden project hit the same wall connecting a sequencer to GrandOrgue
-([bug 1563](https://sourceforge.net/p/rosegarden/bugs/1563/)), where Rosegarden's
-maintainer put it plainly: *"MIDI (sequencer) software, that just tries to
-connect to existing MIDI ports, is not compatible with GrandOrgue."* The fixes
-recorded there and in [discussion #1800](https://github.com/GrandOrgue/grandorgue/discussions/1800):
+**2. The receiver's ranges were degenerate.** Exporting the settings through
+**Audio/MIDI → MIDI Objects → Export** showed the manual already had a `Note`
+receiver, with `high_key: 0` and `high_value: 0` -- a key range of 0..0 and a
+velocity range of 1..0, matching nothing. `grandorgue-midi.yaml` in the repo is
+the corrected file; import it through the same dialog.
 
-- Assign the manual a device, channel and note range in GrandOrgue itself. The
-  easy route is right-click the manual → **Listen for events** → play a note.
-- **Lowest velocity must be 1, not 0**, or every note-off is read as another
-  note-on and keys never release.
-- Prefer the ALSA **Midi Through** port to a direct connection.
+**3. The tests were sending the wrong notes.** This is the one that cost the
+most time. `Manual001` starts at `FirstAccessibleKeyMIDINoteNumber` = 36, and
+the app sends 36..44 from the key manifest -- but every manual probe used
+60..67, which is outside the manual's range. GrandOrgue received those events
+and correctly ignored them, which looks exactly like an unbound receiver.
+**Out-of-range notes fail silently and are indistinguishable from a
+misconfigured receiver.** Check the manual's key range before concluding
+anything about MIDI binding.
 
-**Two attempts to seed this from the config file failed.** Writing the receiver
-keys into `[MidiInitial001]` -- with an empty device, then with GrandOrgue's own
-logical device string -- produced silence both times. The in-app assignment is
-the supported path and the one this project now uses.
-
-**What the ODF had to change.** The generated console drew nothing: manual and
-stops were all `Displayed=N`, so there was no keyboard to right-click and the
-supported setup path was unreachable. They are drawn now, and GrandOrgue renders
-an eight-key manual with its drawstops on the built-in panel.
-
-**What the player had to change.** `midi_out` prefers `Midi Through` over
-GrandOrgue's own port. A receiver is bound to the device it was taught, so the
-device must be identical every run -- and Midi Through is a kernel port that
-exists whether or not GrandOrgue is running, where GrandOrgue's own port appears
-only after it starts.
+**Audio/MIDI → Log MIDI events** is the diagnostic that separates the cases: it
+prints every arriving event, so "not received" and "received and dropped" stop
+looking alike. Two attempts to seed the receiver by hand-writing the config file
+failed before the exported YAML made the actual state visible.
 
 ---
 
