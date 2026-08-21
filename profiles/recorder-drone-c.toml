@@ -1,4 +1,4 @@
-# Drone flute in C, just intonation, every pipe a true recording.
+# Drone flute in C, just intonation, every melody pipe a true recording.
 #
 # This profile exists because of what the sample set is. VCSL's baroque
 # recorders are sampled whole-tone -- C D E F# G# A#, every step two semitones
@@ -6,7 +6,7 @@
 # transposing recordings, and the A# profile does exactly that for four of its
 # six melody notes, dragging each sample's formants a semitone with it.
 #
-# On C nothing has to be transposed. C5 -> G5 is the only perfect fifth
+# On C no melody note has to be transposed. C5 -> G5 is the only perfect fifth
 # anywhere in the thirteen recordings, and it is the interval a drone
 # instrument most needs: every melody note here sounds against a fixed root,
 # so a tempered fifth would beat audibly where a just one does not.
@@ -35,18 +35,29 @@
 # octave, so none is asserted.
 
 id            = "recorder-drone-c-just"
-display       = "Drone flute in C, just intonation, no borrowed samples"
+display       = "Drone flute in C, just intonation, untransposed melody"
 family        = "recorder-drone"
 concert_a_hz  = 440.0
 
 tuning_origin = "maker-spec"
 tuning_source = "Southern Cross Flutes, 'Natural Tuning vs Equal Temperament' (https://www.southerncrossflutes.com/natural-tuning-vs-equal-temperament/) -- states drone flutes are tuned to just intonation on request. The maker page publishes no cents values, so the ratios above are this project's realisation of the tuning the maker names, not a measurement of any instrument."
 sample_source = "vcsl-cc0"
-sample_note   = "Baroque soprano recorder from VCSL (CC0). A recorder is a duct flute like a drone flute, but it is not one: the structure is right, the timbre is a proxy. Every note this profile plays is a note VCSL actually recorded, so no pipe is transposed and no formants are shifted; PitchTuning carries only the cents table."
+sample_note   = "Baroque soprano recorder from VCSL (CC0). A recorder is a duct flute like a drone flute, but it is not one: the structure is right, the timbre is a proxy. Every melody note is a note VCSL actually recorded, so no melody pipe is transposed and no formants are shifted there; across the melody chamber PitchTuning carries only the cents table. The drone is the one exception: C4 is recorded, and C3 is that same recording pitched down 1200 cents, formants and all."
 
 [chambers.drone]
 holes = 0
-notes = ["C4"]
+# Two octaves of root, so the drone can sit under a melody that reaches down
+# into the C4 octave. C4 is recorded; C3 is that recording pitched down an
+# octave by GrandOrgue, which is the one borrowed pipe in this file.
+#
+# C2 is not offered and cannot be. GrandOrgue accepts PitchTuning only within
+# +/-1800 cents -- measured against 3.17.3, which loads -1800 and rejects
+# -1801 with "Out of range value at section 'Rank001' entry
+# 'Pipe001PitchTuning'". A second octave down needs -2400. The only route to
+# one is a pre-rendered half-speed sample, and two octaves below a soprano
+# recorder is a slowed tape rather than a low flute.
+notes = ["C4", "C3"]
+samples = { "C3" = "C4" }
 
 [chambers.melody]
 holes = 6
