@@ -121,9 +121,9 @@ pulsing is**.
 
 ### Result
 
-Ordering still matters, because flattening and crossfading each partly undo the
-other and whichever runs last wins its metric. But now that wrap has headroom and
-CV does not, flattening should go **last**:
+Ordering matters, because flattening and crossfading each partly undo the other
+and whichever runs last wins its metric. Flattening goes **last**: the crossfade
+touches ~12 ms while the breath envelope spans the whole loop.
 
 | Order | Notes passing both |
 |---|---|
@@ -133,12 +133,42 @@ CV does not, flattening should go **last**:
 
 The detrend attempt aimed to stop flattening from re-opening the wrap by forcing
 `gain[0] == gain[-1]`. It degraded CV badly (0.004–0.026 → 0.016–0.234):
-subtracting a ramp from a *multiplicative* gain distorts the correction. Any
-periodic-gain scheme needs to work in the log domain. Not pursued.
+subtracting a ramp from a *multiplicative* gain distorts the correction.
 
-Final state of `tools/loopfind.py`: **8/13**, CV 0.004–0.026 (mostly ~0.006),
-wrap 0.08–4.5. The five failures are four marginal wrap misses (3.0–4.5) and one
-CV miss (C4, 0.026).
+### Measure the envelope around the loop, not across it
+
+The remaining wrap failures were not in the crossfade. They were in the
+flattening gain, and the cause is that the envelope was measured on the loop as
+an open segment while the loop is *heard* as a circle.
+
+Measured open, the envelope's two ends have no reason to agree, and across the
+thirteen recordings they disagree by 0.07–0.82 in log gain — a level ratio of
+up to 2.2:1. The gain curve inherits that difference as a step sitting exactly
+on the seam, scaling the last sample and the first by different amounts. Low
+notes pay most: their adjacent samples differ least, and wrap is measured in
+units of the loop's own typical sample-to-sample step.
+
+Two ways to close it, both measured over all thirteen:
+
+| Flattening gain | Wrap range | CV range | Passing both |
+|---|---|---|---|
+| envelope measured open | 0.08–4.54 | 0.004–0.026 | 8 / 13 |
+| open, then endpoint ramp removed in the log domain | 0.13–1.56 | 0.024–0.234 | 0 / 13 |
+| **envelope measured circularly** | **0.10–1.29** | **0.005–0.020** | **12 / 13** |
+
+Removing the ramp works on the metric it targets and fails overall, because the
+ramp it removes *is* the breath trend: taking it out closes the seam by leaving
+the pulsing uncorrected. Measuring circularly — wrapping the segment around
+itself before the RMS envelope, then using the interior — closes the seam
+without leaving anything behind, because the envelope is then periodic by
+construction and no correction is needed.
+
+Weighting the loop search to prefer endpoints at matching levels, so the ramp
+would be small to begin with, changes nothing once the envelope is circular
+(12/13 at every weight tried from 0 to 2) and is not in the tool.
+
+Final state of `tools/loopfind.py`: **12/13**, CV 0.005–0.020, wrap 0.10–1.29.
+The single failure is C4 on CV, at 0.0203 against a 0.02 threshold.
 
 ### Decision: use LoopAuditioneer
 

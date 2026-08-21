@@ -36,18 +36,31 @@ from dsp import (load_mono, note_from_filename, nominal_hz, midi_of, detect_f0,
 
 
 def flatten(seg, hop):
-    """Divide out the slow RMS envelope. `hop` must span several periods.
+    """Divide out the slow RMS envelope, measured around the loop. `hop` must
+    span several periods.
 
-    Note: linearly detrending this gain curve to force gain[0] == gain[-1] was
-    tried, to stop flattening from re-opening the wrap. It badly degraded the
-    envelope instead (CV 0.004-0.026 -> 0.016-0.234): subtracting a ramp from a
-    *multiplicative* gain distorts the correction. Any periodic-gain scheme
-    needs to work in the log domain. See RESEARCH.md.
+    The envelope is measured on the segment wrapped around itself, because
+    that is how the loop is heard: tiled, its last sample is followed by its
+    first. Measured open, the envelope's two ends never agree -- here they
+    disagree by up to 0.82 in log gain, a level ratio over 2:1 -- and the gain
+    curve inherits that as a step sitting exactly on the seam. Low notes pay
+    most, their adjacent samples differing least and the wrap metric being in
+    units of the loop's own typical step.
+
+    Measuring circularly removes the step without leaving anything behind.
+    Forcing the open envelope's ends to agree instead, by removing the
+    endpoint ramp, does fix wrap and ruins CV: the ramp it takes out is the
+    breath trend itself (13/13 on wrap, 0/13 overall). Removing that ramp in
+    the linear rather than the log domain is worse again, distorting a
+    multiplicative gain (CV 0.004-0.026 -> 0.016-0.234). See RESEARCH.md
+    section 4.
     """
-    e = rms_envelope(seg, hop)
+    pad = int(hop)
+    ext = np.concatenate([seg[-pad:], seg, seg[:pad]])
+    e = rms_envelope(ext, hop)
     if len(e) < 3:
         return seg
-    t = (np.arange(len(e)) + 0.5) * hop
+    t = (np.arange(len(e)) + 0.5) * hop - pad
     gain = np.interp(np.arange(len(seg)), t, e.mean() / np.maximum(e, 1e-9))
     return seg * gain
 
