@@ -433,6 +433,35 @@ prints every arriving event, so "not received" and "received and dropped" stop
 looking alike. Two attempts to seed the receiver by hand-writing the config file
 failed before the exported YAML made the actual state visible.
 
+### Where the binding is kept, and how long it lasts
+
+Once made, the binding persists on its own. It is stored per organ in a
+combination file at
+
+    ~/Documents/GrandOrgue/Data/<HASH>-0.cmb
+
+which is gzipped text; `zcat` it and the manual's receiver is a plain
+`[Manual001]` block of `MIDIChannel001`, `MIDIEventType001`, key range and
+velocity range. GrandOrgue writes it on clean exit, so driving **File → Save**
+is not required — which matters, because that menu item resisted automation by
+both `ctrl+s` and a synthetic click.
+
+`~/Documents/GrandOrgue/Settings/` stays empty and is the wrong place to look;
+searching it is what makes the binding look lost when it is not.
+
+Measured: a load-and-exit cycle against a copy of a real GrandOrgue home
+returned the same hash filename with the `[Manual001]` receiver byte-for-byte
+intact, and it had already survived two regenerations of the ODF it belongs to.
+The hash is therefore stable across ODF content changes.
+
+What it is *not* is reproducible from outside GrandOrgue. It matches no SHA-1 of
+the ODF's path or contents under any combination of encoding, length prefix and
+terminator tried, so a prebuilt `.cmb` cannot be shipped to a machine that has
+never made the binding. Nor can one be captured by loading the organ once: with
+nothing bound, GrandOrgue writes no `.cmb` at all. The one-time import of
+`grandorgue-midi.yaml` through **Audio/MIDI → MIDI Objects → Import** stays
+manual; it just does not have to be repeated.
+
 ---
 
 ## 8. GrandOrgue runtime control, and reverb

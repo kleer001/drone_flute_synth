@@ -64,8 +64,15 @@ thread, the MIDI port, or the panic path.
 GrandOrgue ignores incoming notes until a manual has a MIDI receiver bound in
 its own window (right-click the manual, *Listen for events*). The generated
 console draws its manual and stops so that is possible, and `midi_out` sends via
-`Midi Through` so the binding stays valid across runs. RESEARCH.md §9 has the
-sources and the two failed attempts at seeding it from config.
+`Midi Through` so the binding stays valid across runs.
+
+That binding is a one-time step per machine, not per run. GrandOrgue keeps it in
+`~/Documents/GrandOrgue/Data/<HASH>-0.cmb` — gzipped text, written on clean exit
+— and it survives both restarts and regeneration of the ODF. It is not in
+`~/Documents/GrandOrgue/Settings/`, which stays empty; looking there is what
+makes a working binding look lost. RESEARCH.md §7 has the sources, the two
+failed attempts at seeding it from config, and why the file cannot be shipped
+prebuilt.
 
 There is no test suite. Verification is measurement, and there are two gates:
 `loop_qa.py` for the sample side, and `cli.py check` for the MIDI side. A change
