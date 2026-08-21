@@ -491,6 +491,14 @@ real browser. Numbers below are single measurements, not averages.
 Criterion 4's spinner path never triggered, so the "countdown hit zero first"
 branch is written but unobserved.
 
+The page was then rebuilt as one dense panel — parameters as single rows of
+label, slider and value, no cards, no section headings. That is not only taste:
+accenting every heading and control meant colour signalled nothing, so colour
+now carries state only — amber for edited-not-submitted, green for sounding, red
+for panic — and the transport reads as a transport by shape and position rather
+than by a caption saying so. The panel went from roughly 1200 px tall to 210,
+and the same eight criteria were re-run against it unchanged.
+
 Two things the build changed, both from testing rather than from reading:
 
 - **The page must serialise its own polls.** At 4 Hz, two `/state` requests can

@@ -7,17 +7,19 @@ const POLL_MS = 250;
 const TOKEN = new URLSearchParams(location.search).get("token");
 
 const LABELS = {
-  notes_per_breath: "Notes per breath",
-  step_leap_ratio: "Step : leap ratio",
-  ornament_rate: "Ornament rate",
-  cadence_strength: "Cadence strength",
-  register_bias: "Register bias",
-  sweep_depth: "Dynamic sweep depth",
-  pushed_bias: "'Pushed' layer bias",
-  breath_mean_s: "Breath mean (s)",
-  breath_spread_s: "Breath spread (s)",
-  inhale_s: "Inhale gap (s)",
+  notes_per_breath: "notes / breath",
+  step_leap_ratio: "step : leap",
+  ornament_rate: "ornament",
+  cadence_strength: "cadence",
+  register_bias: "register bias",
+  sweep_depth: "sweep depth",
+  pushed_bias: "pushed bias",
+  breath_mean_s: "breath mean",
+  breath_spread_s: "breath spread",
+  inhale_s: "inhale gap",
 };
+const DECIMALS = { notes_per_breath: 1, breath_mean_s: 1,
+                   breath_spread_s: 1, inhale_s: 2 };
 const BREATH_FIELDS = ["breath_spread_s", "inhale_s"];
 
 const $ = (id) => document.getElementById(id);
@@ -33,6 +35,7 @@ let clashHeld = false;    // user chose "keep editing" over a remote change
 let offline = false;
 let mySubmission = null;  // so our own set draining is not read as a clash
 let polling = false;      // one poll at a time: two interleaved polls raced
+let running = true;
 let presetWeights = {};
 let weightNames = [];
 
@@ -56,17 +59,23 @@ async function api(path, body) {
 function slider(name) {
   const [lo, hi] = ranges[name];
   const step = (hi - lo) > 6 ? 0.5 : 0.01;
+  const row = document.createElement("div");
+  row.className = "param";
+  row.dataset.field = name;
+
   const label = document.createElement("label");
-  label.dataset.field = name;
-  label.innerHTML =
-    `${LABELS[name] || name} <output></output>` +
-    `<input type="range" min="${lo}" max="${hi}" step="${step}">`;
-  const input = label.querySelector("input");
+  label.htmlFor = `s-${name}`;
+  label.textContent = LABELS[name] || name;
+  const input = document.createElement("input");
+  Object.assign(input, { type: "range", id: `s-${name}`, min: lo, max: hi, step });
+  const value = document.createElement("output");
+
   input.addEventListener("input", () => {
     working[name] = parseFloat(input.value);
     render();
   });
-  return label;
+  row.append(label, input, value);
+  return row;
 }
 
 /* §10.7: moving any weight makes the set no longer the named preset. The
@@ -81,9 +90,6 @@ function isCustom() {
 
 function build(state) {
   ranges = state.ranges;
-  $("display").textContent = state.readonly.display;
-  $("provenance").textContent = state.readonly.provenance;
-
   const root = $("root");
   root.innerHTML = "";
   for (const note of state.readonly.drone_notes) {
@@ -122,16 +128,12 @@ function build(state) {
     render();
   });
 
-  const ro = $("ro");
-  ro.innerHTML = "";
-  for (const [k, v] of [["Profile", state.readonly.profile_id],
-                        ["Concert reference", state.readonly.concert_a_hz + " Hz"],
-                        ["Tuning origin", state.readonly.tuning_origin],
-                        ["ODF", state.readonly.odf_path]]) {
-    const dt = document.createElement("dt"); dt.textContent = k;
-    const dd = document.createElement("dd"); dd.textContent = v;
-    ro.append(dt, dd);
-  }
+  document.title = state.readonly.display;
+  $("ro").textContent = [state.readonly.profile_id,
+                         `${state.readonly.concert_a_hz} Hz`,
+                         state.readonly.tuning_origin,
+                         state.readonly.odf_path].join(" · ") + " ·";
+  $("ro").title = state.readonly.provenance;
   built = true;
 }
 
@@ -161,14 +163,14 @@ function render() {
     const input = label.querySelector("input");
     if (document.activeElement !== input) input.value = working[name];
     label.querySelector("output").textContent =
-      Number(working[name]).toFixed(name === "notes_per_breath" ? 1 : 2);
+      Number(working[name]).toFixed(DECIMALS[name] ?? 2);
     label.classList.toggle("dirty", isDirty(name));
     input.disabled = locked;
   }
-  for (const [id, field] of [["root", "root"], ["mood", "mood"], ["seed", "seed"]]) {
-    const el = $(id);
-    el.disabled = locked;
-    el.parentElement.classList.toggle("dirty", isDirty(field));
+  for (const name of ["root", "mood", "seed"]) {
+    $(name).disabled = locked;
+    document.querySelector(`.field[data-name="${name}"]`)
+      .classList.toggle("dirty", isDirty(name));
   }
   $("reseed").disabled = locked;
 
@@ -260,9 +262,10 @@ async function pollOnce() {
 
   if (document.activeElement !== $("level")) $("level").value = state.master_level;
   $("level-out").textContent = state.master_level;
-  $("runbtn").textContent = state.running ? "Stop" : "Start";
-  $("engine-line").textContent =
-    `breath ${state.breath_index} · seed ${state.seed} · run ${state.run_id}`;
+  running = state.running;
+  $("runbtn").textContent = running ? "\u25A0" : "\u25B6";
+  $("runlamp").classList.toggle("on", running);
+  $("engine-line").textContent = `breath ${state.breath_index} · seed ${state.seed}`;
   render();
 }
 
@@ -302,7 +305,7 @@ $("revert").addEventListener("click", () => {
 });
 
 $("runbtn").addEventListener("click", async () => {
-  await api($("runbtn").textContent === "Stop" ? "/stop" : "/start", {});
+  await api(running ? "/stop" : "/start", {});
   poll();
 });
 $("panic").addEventListener("click", () => api("/panic", {}));

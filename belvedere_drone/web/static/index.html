@@ -9,79 +9,61 @@
 </head>
 <body>
 
-<div id="disconnected" class="banner bad" hidden>
-  Disconnected from the engine. The performance may still be running.
-</div>
-<div id="clash" class="banner warn" hidden>
-  Settings changed underneath you — another tab submitted.
-  <button id="keep-editing" class="link">Keep editing</button>
-  <button id="discard" class="link">Discard mine and reload</button>
-</div>
-
-<header>
-  <h1 id="display">belvedere drone</h1>
-  <p id="provenance" class="muted"></p>
-</header>
-
-<section class="transport">
-  <h2>Transport <span class="muted">— live, no submit</span></h2>
-  <div class="row">
-    <button id="runbtn" class="primary">Stop</button>
-    <label class="grow">Master level
-      <input type="range" id="level" min="0" max="127" step="1">
-      <output id="level-out"></output>
-    </label>
-    <button id="panic" class="danger">Panic</button>
+<div id="banners">
+  <div id="disconnected" class="banner bad" hidden>
+    Disconnected — the performance may still be running.
   </div>
-  <p class="muted" id="engine-line"></p>
-</section>
+  <div id="clash" class="banner warn" hidden>
+    Another tab submitted.
+    <button id="keep-editing" class="link">Keep mine</button>
+    <button id="discard" class="link">Reload theirs</button>
+  </div>
+</div>
 
-<section class="panel">
-  <h2>Performance</h2>
+<!-- Transport: the master strip, set apart at a fixed end, always live. -->
+<div class="transport">
+  <button id="runbtn" class="run" title="Start / stop">&#9632;</button>
+  <span id="runlamp" class="lamp" title="sounding"></span>
+  <input type="range" id="level" min="0" max="127" step="1" title="Master level">
+  <output id="level-out">0</output>
+  <button id="panic" class="panic" title="All sound off">panic</button>
+  <span class="meta" id="engine-line"></span>
+</div>
 
-  <div class="grid">
-    <label>Drone root
-      <select id="root"></select>
-    </label>
-    <label>Mood preset
-      <select id="mood"></select>
-    </label>
-    <label>Seed
-      <span class="inline">
-        <input type="text" id="seed" inputmode="numeric">
-        <button id="reseed" class="link">Reseed</button>
-      </span>
-    </label>
+<main>
+  <div class="rows" id="head">
+    <div class="field" data-name="root">
+      <label for="root">root</label><select id="root"></select>
+    </div>
+    <div class="field" data-name="mood">
+      <label for="mood">mood</label><select id="mood"></select>
+    </div>
+    <div class="field" data-name="seed">
+      <label for="seed">seed</label>
+      <input type="text" id="seed" inputmode="numeric">
+      <button id="reseed" class="link" title="New random seed">&#8635;</button>
+    </div>
   </div>
 
-  <h3>Mood weights</h3>
-  <div class="grid" id="weights"></div>
-
-  <h3>Breath</h3>
-  <div class="grid" id="breath"></div>
+  <div class="rows" id="weights"></div>
+  <div class="rows" id="breath"></div>
 
   <div id="errors" class="banner bad" hidden></div>
 
-  <div class="row submit-row">
-    <button id="submit" class="primary" disabled>Submit</button>
+  <div class="commit">
+    <button id="submit" class="go" disabled>Submit</button>
     <button id="revert" disabled>Revert</button>
     <span id="status" class="status"></span>
   </div>
-</section>
+</main>
 
-<section class="readonly">
-  <h2>Not ours to drive</h2>
-  <dl id="ro"></dl>
-  <p class="muted">
-    Intonation (temperament), per-pipe voicing and reverb are switched in
-    <strong>GrandOrgue's own window</strong>. They are live, and invisible to
-    this page — whatever it last knew about them may be wrong.
-  </p>
-  <div class="row">
-    <button id="regenerate">Regenerate ODF</button>
-    <span id="regen-note" class="status"></span>
-  </div>
-</section>
+<footer>
+  <span id="ro"></span>
+  <button id="regenerate" class="link">regenerate ODF</button>
+  <span id="regen-note"></span>
+  <p>Temperament, voicing and reverb live in GrandOrgue's window — live there,
+     invisible here, so anything this page shows about them may be stale.</p>
+</footer>
 
 <script src="app.js"></script>
 </body>
