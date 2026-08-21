@@ -2,115 +2,115 @@ fresh
 
 ## Summary
 
-Ran SPEC.md end to end: all five spikes (§12), then built a v0 app. The spikes
-changed the spec — S1 killed §2's stretched-octave thesis, S4 made breath layers
-velocity-based, S5 dropped LoopAuditioneer. SPEC/RESEARCH/README/CLAUDE.md are
-updated to match.
+The instrument makes sound. Verified end to end on the real desktop and the real
+output device: GrandOrgue on `:0`, audio recorded from the Plantronics sink's
+monitor while `cli play` ran — 28.7 s, peak 0.049, inhale gaps visible as drops
+to ~0.0005. That was the last blocker and it is closed.
 
-Working: ODF generation loads cleanly in GrandOrgue 3.17.3, MIDI seam is live,
-MIDI-side acceptance criteria pass. **Not yet working: trustworthy audio.**
-GrandOrgue emits a constant 932 Hz tone with no MIDI input, and reports
-polyphony 0 while doing it — so we cannot yet say "it makes sounds" honestly.
+Since the previous breadcrumb: the shipped profile moved from A#/NAF to
+`recorder-drone-c` (C root, just intonation, **no borrowed samples**); the
+melody engine was rewritten from a random walk into a motif engine with
+call-and-answer phrasing; the SPEC §10 web GUI was built and measured; and
+`run.sh` became a working one-command entry point.
 
-Two user directives are outstanding: move the package under `src/` like
-`../create_project` does, and get `run.sh` actually launching the thing.
+Three items are outstanding — one bug, two features. None is started.
 
 ## Todos
 
 ### Parallel
-- [ ] #1 Move `belvedere_drone/` to `src/belvedere_drone/` per `../create_project`
-      conventions: add `pyproject.toml` (hatchling, `packages = ["src/<pkg>"]`,
-      `requires-python`, dev extras pytest/ruff, `[tool.ruff] line-length = 100`,
-      `[tool.pytest.ini_options] pythonpath = ["src"]`). Update SPEC §10's module
-      layout, CLAUDE.md and README paths, and `run.sh`'s `-m` invocations.
-- [ ] #2 Diagnose the constant 932 Hz tone (see Context — this is the blocker on
-      any claim that it makes sound).
-- [ ] #6 Move working files out of system `/tmp` into the repo's `tmp/`
-      (new global rule). `tmp/` and `vendor/` are already in `.gitignore`.
+- [ ] #1 BUG: the GUI's Submit/Revert buttons stay disabled when only a slider
+      is moved. They enable when the change comes from the mood pull-down.
+      Engine was verified healthy while reproducing (`running: true`,
+      `in_flight: None`, `next_drain_in` ticking, no server-side dirty fields),
+      so the form lock is NOT stuck — `locked = offline || inFlight !== null`
+      is false. Fault is client-side in `web/static/app.js`: `anyDirty()` is not
+      going true on slider input. Note synthetic `input` events DID enable
+      Submit in earlier testing, so the repro probably needs a real pointer.
+      Suspect `isDirty()`'s number compare or `render()` overwriting `working`.
+- [ ] #2 FEATURE: octave control for the drone root — C4 → C3 → C2. Note the
+      melody chamber is only 7 notes and answers already reach the top of it,
+      so dropping the drone also gives the contour room (see Context).
+- [ ] #3 FEATURE: reverb controls. GrandOrgue ships a convolution reverb
+      (File → Settings → Reverb, built on `zita-convolver`), but it is **global,
+      not per-organ**, and not MIDI-bindable — so decide what the GUI can
+      honestly own versus only name. RESEARCH.md §8 has the capability table and
+      the caveats; §10.11 forbids claiming knowledge of GrandOrgue's state.
+- [ ] #4 Persist the GrandOrgue MIDI binding without a manual step. The import
+      works but `File → Save` could not be driven by automation (neither
+      `ctrl+s` nor clicking the menu item landed) and
+      `~/Documents/GrandOrgue/Settings/` is still empty, so the binding is lost
+      on restart. Find where GrandOrgue writes the `.cmb` on clean exit and ship
+      that, or automate the save.
+- [ ] #5 Promote `tmp/engrave.py` (proportional-time score → SVG/PDF) and
+      `tmp/render_wav.py` (offline preview render) into `tools/` with
+      `--seed` / `--mood` / `--duration` flags. Both are throwaway scripts in
+      `tmp/` right now and will vanish.
 
 ### Sequential
-- [ ] #3 (needs: #2) Verify `run.sh` end to end on a real desktop session —
-      it has never been run start-to-finish; only its individual steps have.
-- [ ] #4 (needs: #2) Teach `run.sh` to seed GrandOrgue's audio device on first
-      run, so a fresh clone makes sound without hand-configuring the GUI.
-- [ ] #5 (needs: #2) Write `tools/pitch_qa.py` for SPEC §11 criterion 4: sound
-      each pipe alone, record, `dsp.detect_f0` seeded from nominal, assert within
-      ±3 cents of the profile's cents table. The recording rig now exists.
-- [ ] #7 (needs: #1) Commit. Nothing from this session is committed yet.
+- [ ] #6 (needs: #2) Widen the melody chamber once the octave control exists.
+      VCSL has C4 D4 E4 F#4 G#4 A#4 recorded below what the profile uses, so the
+      range can grow with no new machinery — a profile edit, not code.
 
 ## Context
 
-**Nothing is committed.** Working tree has modified SPEC.md, RESEARCH.md,
-README.md, CLAUDE.md, requirements.txt, tools/dsp.py, tools/loopfind.py, plus
-untracked `belvedere_drone/`, `profiles/`, `run.sh`.
+**Sound path, now working.** Three separate faults, fixed in this order:
+1. `odfgen` never emitted `MIDIInputNumber`. Default is 0 = *no association*, so
+   no MIDI config could attach to the manual. **1 is the pedal; a single-manual
+   organ is 2**, and its Initial MIDI slot is `MidiInitial002`, not 001.
+2. The manual's receiver had degenerate ranges — `high_key: 0`, `high_value: 0`
+   (key range 0..0, velocity range 1..0), matching nothing. Fixed by importing
+   `grandorgue-midi.yaml` (committed at repo root) via
+   **Audio/MIDI → MIDI Objects → Import**.
+3. **The probes were sending the wrong notes.** `Manual001` starts at
+   `FirstAccessibleKeyMIDINoteNumber` = 36 and the app sends 36..44 from the key
+   manifest, but every manual test used 60..67. GrandOrgue receives out-of-range
+   notes and correctly drops them, which is **indistinguishable from an unbound
+   receiver**. This cost hours. Check the key range first.
 
-**The 932 Hz problem (todo #2).** Evidence gathered, in order:
-- GrandOrgue running, zero MIDI sent → constant 932 Hz sine, RMS 0.0101,
-  peak 0.0150 (peak/RMS ≈ 1.49, so near-pure tone), dead flat across the whole
-  recording including breath gaps.
-- GrandOrgue not running → null sink is *exactly* silent (RMS 0.000000). So it
-  is GrandOrgue's stream, not another app.
-- CC 123 + CC 120 on all 16 channels does **not** stop it → not a stuck MIDI note.
-- GrandOrgue's own toolbar reports **polyphony 0** while the tone plays.
-- 932 Hz = A#5 (932.33), which is both melody Pipe006 and exactly 2× the drone
-  A#4 (466.16).
-Polyphony 0 + a pure tone points away from "a pipe is stuck" and toward an audio
-path artifact — e.g. PortAudio/ALSA underrunning and repeating a stale buffer.
-Worth testing next: run GrandOrgue with **no organ loaded** (`-g`) and see if the
-tone is still there. That separates ODF from audio backend in one shot.
+**Diagnostics that work:** `Audio/MIDI → Log MIDI events` prints every arriving
+event and separates "not received" from "received and dropped".
+`aconnect -l` confirms the ALSA subscription. Hand-writing the GrandOrgue config
+file failed three times — the GUI's YAML **Export** is what made the real state
+visible. GrandOrgue's own help is bundled at
+`vendor/grandorgue/usr/share/GrandOrgue/help/GrandOrgue.htb` (a zip of HTML);
+read it before reverse-engineering anything. Chapter 10 is the ODF reference.
 
-**GrandOrgue config is gzipped INI** at `$HOME/GrandOrgueConfig`. Read/patch with
-`gzip.decompress` / `gzip.compress`. Seeding these three keys under
-`[AudioDevices]` is what made it produce audio at all (it ships with an empty
-device and is silent until set):
-```
-Device001Name=PortAudio: ALSA: pulse
-Device001ApiName=ALSA
-Device001PortName=PortAudio
-```
-MIDI needs no seeding: `[MIDIIn]` enables "Midi Through" by default and
-`[MidiInitial001]` binds Manual 1 (ObjectType=Manual, ReceiverType=Manual,
-MidiInputNumber=1), so channel 1 note-ons reach the manual.
+**GTK file dialogs mangle typed paths** (inline autocompletion turns
+`/home/menser/...` into `/home/me/menser/...`). Put the path on the clipboard
+with `xclip -selection clipboard` and `ctrl+v` instead of `xdotool type`.
 
-**Silent capture rig** (records without playing through the user's headset):
-```bash
-pactl load-module module-null-sink sink_name=drone_test    # returns module id
-PULSE_SINK=drone_test <launch GrandOrgue>
-parec --device=drone_test.monitor --format=s16le --rate=48000 --channels=2 \
-      --file-format=wav out.wav
-pactl unload-module <id>     # ALWAYS unload when finished
-```
-Headless GrandOrgue runs under `Xvfb :NN` + `xdotool` + `import -window root`.
-Its error text only appears in a separate window titled "Log messages" — raise it
-with `xdotool windowmap/windowraise` and screenshot; stderr shows nothing useful.
+**Profile.** `profiles/recorder-drone-c.toml` ships. Root C, melody
+C5 D5 E5 F#5 G5 A#5 C6 — every one a real VCSL recording, so `PitchTuning`
+carries only the cents table (max 13.69 ¢, was 118). `C5 → G5` is the *only*
+perfect fifth in the 13 recordings, which is why the root is C. Those seven
+pitches are harmonics 8·9·10·11·12·14·16 of C. The A# profile is kept as the
+NAF-keyed alternative and pays for its root with four transposed pipes.
 
-**GrandOrgue binary**: upstream AppImage 3.17.3-1, extracted with
-`--appimage-extract` (no root, no FUSE). `run.sh` fetches it into `vendor/`.
-Ubuntu's packaged 3.13.1 is older.
+**Melody engine** (`melody.py`, rewritten): a `Phrasing` object carries a 3–5
+note motif across breaths and transforms it (sequence, inversion, retrograde,
+augmentation, diminution, fragmentation). Breaths alternate call and answer, and
+**the answer always quotes the call**. Rhythm is a grid the breath supplies —
+whole pulses of ~0.36 s — not a global tempo. Pitch follows one arch peaking at
+0.68. The walk *reflects* off the ends of the range; clamping made lines stick.
 
-**ODF facts that cost time** (all in RESEARCH.md §7, don't re-derive):
-`AcceptsRetuning=N` is mandatory — MIDI keys are scale-degree indices, so a stock
-temperament implies a >1800-cent retune and GrandOrgue rejects every pipe. 28
-`Disp*` keys are required even with nothing displayed. `[Manual001]` must list
-stops (`Stop001=1`), not just count them. Upstream's
-`src/tests/testing/resources/minimal.organ` is the authority on required keys.
+**GUI** (`web/`, SPEC §10): stdlib `ThreadingHTTPServer`, polled at 4 Hz, one
+static page, 12 sliders. All eight §10.12 criteria measured (RESEARCH.md §9) —
+tightest was 0.30 ms breath drift over 10 minutes against a 5 ms budget.
+Colour carries state only: amber = edited, green = sounding, red = panic.
 
-**Naming question for #1**: `belvedere_drone` comes from SPEC §10 and §3's
-architecture diagram, not from thin air — but the user reacted to it. Decide
-whether to keep it or rename (and update SPEC if renaming).
+**Not built, not claimed:** replay from seed + session log (the log is written,
+nothing reads it); Mode and Pulse controls (the engine has no scale or pulse
+model); GrandOrgue's own Panic via MIDI.
 
-**Loop QA is 8/13** and the shipped profile knowingly uses one failing loop
-(F#5, wrap 4.5) because it is the only recording near F5.
-
-**Cleanup done this session**: the PipeWire null sink module was unloaded and
-stray Xvfb servers killed. If a `drone_test` sink reappears, it leaked —
-`pactl unload-module` it.
+**Verification is measurement.** Two gates: `tools/loop_qa.py` (8/13 loops pass;
+the profile knowingly uses one that does not) and `cli.py check` (MIDI side).
+An ODF change is unverified until GrandOrgue has actually loaded it.
 
 ## Next Step
 
-Todo #2: run GrandOrgue with `-g` (GUI only, no organ) under the null-sink rig
-and record. If the 932 Hz tone is still present with no samples loaded, it is the
-PortAudio/ALSA path and the ODF is exonerated; if it vanishes, bisect the ODF by
-loading a single-pipe organ.
+Todo #1 — the Submit/Revert bug. It is the one thing actively broken in
+something already shipped, and it blocks using the GUI for #2 and #3. Start by
+reproducing with a real pointer (not synthetic events) and logging what
+`anyDirty()` sees.
 
 /home/menser/Dropbox/ai/code/drone_flute_synth
