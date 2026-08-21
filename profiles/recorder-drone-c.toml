@@ -85,6 +85,16 @@ cents = { "D4" = 3.91, "E4" = -13.69, "F#4" = -9.78, "A#4" = -3.91, "C5" = 0.0, 
 # No pitch-fill: every note above is recorded, so nothing borrows.
 samples = {}
 
+[meter]
+# The instrument's clock. A breath resolves to a bar line: the phrase sounds
+# for whole beats, the player breathes on the last of them, and the next phrase
+# starts on a downbeat -- which is how a wind player actually phrases.
+#
+# 84 bpm puts the eighth note at 357 ms, the subdivision a flute line can be
+# read at without the ear losing the beat.
+bpm = 84
+beats_per_measure = 4
+
 [breath]
 mean_s = 7.0
 spread_s = 2.5

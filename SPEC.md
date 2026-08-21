@@ -278,7 +278,7 @@ ODFs.
 
 ---
 
-## 5. Performance model: breath, not tempo
+## 5. Performance model: breath, resolved to the bar
 
 The signature of a real drone flute is that **melody and drone share one breath**.
 The drone is not continuous — it stops when the player inhales. An app that
@@ -287,21 +287,34 @@ drones forever loses the instrument. The core loop is therefore a breath cycle:
 ```
 loop:
     breath_len ~ N(mean, spread)          # e.g. 7.0 s ± 2.5, clamped [3, 14]
+    inhale     ~ N(0.7, 0.2), clamped [0.3, 1.6]
+    snap:  measures    = round((breath_len + inhale) / measure_s)
+           cycle_beats = measures * beats_per_measure
+           inhale      = whole beats, >= 1, leaving >= 2 beats to sound
+           breath_len  = (cycle_beats - inhale_beats) * beat_s
     layer      = choose_layer(mood)       # soft | normal | pushed
     note_on(drone_chamber, root, layer)
     if triple: note_on(harmony_chamber, interval, layer)
     schedule_melody(breath_len, mood)     # §8
     ... play ...
     all_notes_off()                       # ONE release = one breath ending
-    sleep(inhale_gap ~ N(0.7, 0.2), clamped [0.3, 1.6])
+    sleep(inhale)
 ```
 
 Both chambers release on the same event, so GrandOrgue's release samples produce
-the true simultaneous cutoff. Phrase length bounded by lung capacity is what
-makes the pacing feel human rather than algorithmic.
+the true simultaneous cutoff.
 
-Optional pulse/BPM quantisation exists but is **off by default** — free rhythm is
-truer to these instruments.
+**The breath is still the phrase unit; the bar is the grid it lands on.** The
+profile carries a `[meter]` — a tempo and a bar length — and a breath cycle is
+a whole number of bars. The player breathes on the last beats of the bar and
+the next phrase enters on a downbeat, which is how a wind player phrases. The
+beat therefore runs unbroken through the inhale, and every phrase in a
+performance is commensurable with every other one.
+
+Lung capacity still sets the *scale* of a phrase: the drawn length decides how
+many bars the breath gets. What it no longer does is set the grid, which was
+free rhythm's cost — a line whose notes had no arithmetic relation to each
+other could not be written down, read back, or heard as a rhythm at all.
 
 **Breath layers.** Each chamber has `soft`, `normal` and `pushed` layers at
 different breath pressures, each with its own timbre *and its own tuning

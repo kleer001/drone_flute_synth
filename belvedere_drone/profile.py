@@ -49,6 +49,38 @@ class Chamber:
             + self.cents_for(note)
 
 
+class Meter:
+    """The instrument's one global clock: a tempo and a bar length.
+
+    Breaths resolve to bar lines rather than inventing a grid each time, so
+    every phrase in a performance is commensurable with every other one.
+
+    The unit is the eighth note. Motif durations are whole units, and the
+    conventional values a phrase can use -- eighth through whole -- are counts
+    of them.
+    """
+
+    UNITS_PER_BEAT = 2                     # the beat is a quarter; the unit an eighth
+
+    def __init__(self, bpm, beats_per_measure):
+        self.bpm = float(bpm)
+        self.beats_per_measure = int(beats_per_measure)
+        if self.bpm <= 0:
+            raise ValueError(f"bpm must be positive, got {self.bpm}")
+        if self.beats_per_measure < 1:
+            raise ValueError(
+                f"beats_per_measure must be at least 1, got "
+                f"{self.beats_per_measure}")
+        self.beat_s = 60.0 / self.bpm
+        self.measure_s = self.beat_s * self.beats_per_measure
+        self.unit_s = self.beat_s / self.UNITS_PER_BEAT
+        self.units_per_measure = self.beats_per_measure * self.UNITS_PER_BEAT
+
+    def __repr__(self):
+        return (f"<Meter {self.bpm:g} bpm, {self.beats_per_measure}/4, "
+                f"bar {self.measure_s:.3f}s>")
+
+
 class Profile:
     def __init__(self, data, path):
         self.path = path
@@ -102,6 +134,13 @@ class Profile:
             raise ValueError(f"{path}: profile needs a 'drone' chamber")
         if "melody" not in self.chambers:
             raise ValueError(f"{path}: profile needs a 'melody' chamber")
+
+        if "meter" not in data:
+            raise ValueError(
+                f"{path}: profile needs a [meter] table with bpm and "
+                f"beats_per_measure")
+        m = data["meter"]
+        self.meter = Meter(m["bpm"], m["beats_per_measure"])
 
         b = data["breath"]
         self.breath_mean_s = float(b["mean_s"])

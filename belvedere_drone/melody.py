@@ -12,11 +12,12 @@ This version follows the melodic grammar in the sibling repos:
   transformed (sequence, inversion, retrograde, augmentation, fragmentation).
   Unity comes from the repetition and variety from the transformation, rather
   than from fresh randomness each time.
-* **A pulse the breath supplies.** Each breath is divided into an integer number
-  of pulses of roughly `PULSE_TARGET_S`, and every onset and duration is a whole
-  number of them. The instrument still has no tempo -- the grid is derived from
-  each breath rather than imposed on it -- but notes now relate to each other
-  arithmetically instead of landing wherever.
+* **A meter.** The profile carries a tempo and a bar length, and every breath
+  resolves to a bar line (SPEC section 5). Onsets fall on eighth-note positions
+  and durations are conventional values -- eighth, quarter, dotted quarter,
+  half, dotted half, whole -- so the line can be written down and read back.
+  Accent follows the bar: downbeats are strongest, other beats next, offbeats
+  weakest.
 * **One arch, peaking late.** Statements are transposed to follow a contour that
   rises to a single climax in the back half and falls to the cadence.
 * **Stable and active degrees.** Stability is measured against the drone, since
@@ -34,7 +35,10 @@ reproduces a performance exactly (acceptance criterion 5).
 from .profile import midi_of
 
 GRACE_S = 0.06
-PULSE_TARGET_S = 0.36        # a subdivision the ear can follow at flute speed
+# Conventional note values, in eighths, longest first: whole, dotted half,
+# half, dotted quarter, quarter, eighth. A structural note is always one of
+# these, so every phrase is notatable.
+NOTE_VALUES = (8, 6, 4, 3, 2, 1)
 ARTICULATION = 0.9           # a note stops short of the next onset, so it breathes
 CLIMAX_AT = 0.68             # one high point, in the back half
 
@@ -59,6 +63,15 @@ class Note:
         return f"<{kind} {self.name} @{self.start_s:.2f}s {self.dur_s:.2f}s>"
 
 
+def fit_value(want, room):
+    """The longest conventional value that is no longer than `want` or `room`."""
+    limit = min(want, room)
+    for value in NOTE_VALUES:
+        if value <= limit:
+            return value
+    return 0
+
+
 def stability(notes, root):
     """2 = strong rest, 1 = weak rest, 0 = active, per scale position."""
     r = midi_of(root)
@@ -70,7 +83,7 @@ def stability(notes, root):
 
 
 # -- the motif and its transformations ------------------------------------
-# Each is a pure function over a list of (step, pulses): the cheapest and most
+# Each is a pure function over a list of (step, units): the cheapest and most
 # principled way to earn variety from recombination.
 
 def new_motif(rng, mood):
@@ -235,55 +248,56 @@ class Phrasing:
 
     # -- ornaments --------------------------------------------------------
 
-    def _trill(self, pos, start_s, dur_s, velocity):
-        """Shake between the note and its upper neighbour, landing back on it.
+    def _trill(self, pos, start_s, dur_s, velocity, unit_s, held):
+        """Shake with the upper neighbour, then resolve onto the main note.
 
-        A trill wants a note long enough to shake, so the caller only offers
-        held ones; it resolves onto the main note so the line still arrives
-        where the motif said it would.
+        The shakes are grace: they decorate, and the note the motif asked for
+        is the resolution, which lands on a grid position with a conventional
+        value of its own. A trill therefore never moves the skeleton.
         """
         upper = self._fold(pos + 1)
-        rate = max(0.055, min(0.085, dur_s / 8))
-        n = max(3, int(dur_s / rate))
-        out = []
-        for i in range(n):
-            p = pos if i % 2 == 0 else upper
-            last = i == n - 1
-            out.append(Note(self.notes[pos if last else p], start_s + i * rate,
-                            dur_s - i * rate if last else rate,
-                            velocity if i % 2 == 0 else max(1, int(velocity * .9)),
-                            is_grace=not last))
+        tail = 2 if held >= 6 else 1              # units the resolution keeps
+        shake_units = held - tail
+        shake_s = shake_units * unit_s
+        n = max(2, shake_units * 4)               # four shakes to the unit
+        rate = shake_s / n
+        out = [Note(self.notes[pos if i % 2 == 0 else upper],
+                    start_s + i * rate, rate,
+                    velocity if i % 2 == 0 else max(1, int(velocity * .9)),
+                    is_grace=True)
+               for i in range(n)]
+        out.append(Note(self.notes[pos], start_s + shake_s,
+                        tail * unit_s * ARTICULATION, velocity))
         return out
 
-    def _ornament(self, pos, start_s, dur_s, velocity, mood):
-        """Decorate a structural note. The skeleton stays; this is the voice."""
+    def _ornament(self, pos, start_s, velocity, mood):
+        """Grace notes leaning into the beat, ahead of the structural note.
+
+        They borrow from the silence before the note rather than from the note
+        itself, so the skeleton keeps both its grid position and its written
+        value. That is what a grace note is.
+        """
         kind = self.rng.choices(("grace", "mordent", "turn"),
                                 weights=(3, 2, 2))[0]
-        out = []
-        if kind == "grace" and start_s > GRACE_S:
-            near = self._clamp(pos + self.rng.choice((-1, 1)))
-            out.append(Note(self.notes[near], start_s - GRACE_S, GRACE_S,
-                            velocity, is_grace=True))
-            out.append(Note(self.notes[pos], start_s, dur_s, velocity))
-            return out
-        # A mordent bites at the lower neighbour; a turn curls around the note.
-        shape = (0, -1, 0) if kind == "mordent" else (1, 0, -1, 0)
-        bite = min(0.075, dur_s / (len(shape) + 1))
-        for i, offset in enumerate(shape):
-            p = self._clamp(pos + offset)
-            last = i == len(shape) - 1
-            out.append(Note(self.notes[p], start_s + i * bite,
-                            dur_s - i * bite if last else bite, velocity))
-        return out
+        shape = {"grace": (self.rng.choice((-1, 1)),),
+                 "mordent": (0, -1),
+                 "turn": (1, 0, -1)}[kind]
+        lead = GRACE_S * len(shape)
+        if start_s < lead:
+            return []
+        return [Note(self.notes[self._clamp(pos + offset)],
+                     start_s - lead + i * GRACE_S, GRACE_S,
+                     max(1, int(velocity * 0.85)), is_grace=True)
+                for i, offset in enumerate(shape)]
 
-    def _run_into(self, from_pos, to_pos, arrive_s, pulse_s, velocity):
+    def _run_into(self, from_pos, to_pos, arrive_s, unit_s, velocity):
         """A fast scalar dash filling the gap before a structural note."""
         span = to_pos - from_pos
         steps = [from_pos + (1 if span > 0 else -1) * i
                  for i in range(1, abs(span))]
         if not steps:
             return []
-        rate = min(0.09, pulse_s / max(2, len(steps)))
+        rate = min(0.09, unit_s / max(2, len(steps)))
         first = arrive_s - rate * len(steps)
         if first < 0:
             return []
@@ -293,7 +307,7 @@ class Phrasing:
 
     # -- one breath -------------------------------------------------------
 
-    def breath(self, mood, breath_len_s, layer_velocity):
+    def breath(self, mood, meter, breath_len_s, layer_velocity):
         rng = self.rng
         if not self.notes:
             raise ValueError("melody chamber has no playable notes")
@@ -309,11 +323,12 @@ class Phrasing:
         cadence_p = min(1.0, mood.cadence_strength *
                         (1.0 + contrast if answering else 1.0 - contrast))
 
-        pulses = max(4, round(breath_len_s / PULSE_TARGET_S))
-        pulse_s = breath_len_s / pulses
+        # The breath is a whole number of beats, so this division is exact.
+        units = max(2, round(breath_len_s / meter.unit_s))
+        unit_s = meter.unit_s
         # notes_per_breath sets how much of the breath carries notes; the rest
         # is silence the phrase can breathe in.
-        budget = max(2, min(pulses, int(round(mood.notes_per_breath * 1.4))))
+        budget = max(2, min(units, int(round(mood.notes_per_breath * 1.4))))
 
         span = max(1.5, (len(self.notes) - 1) * 0.45)
         centre = ((len(self.notes) - 1) * (0.5 + mood.register_bias * 0.35)
@@ -324,19 +339,19 @@ class Phrasing:
 
         scheduled = []
         pos = self._clamp(int(round(centre)))
-        at = 0                                     # current pulse
+        at = 0                                     # position, in units
         placed = 0
         prev_pos = pos
 
-        while at < pulses - 1 and placed < budget:
+        while at < units and placed < budget:
             motif = base if first_statement else self._restate()
             first_statement = False
             # Follow the arch: transpose this statement toward the contour.
-            target = centre + span * (_arch(at / pulses) * 2.0 - 1.0) * 0.55
+            target = centre + span * (_arch(at / units) * 2.0 - 1.0) * 0.55
             pos = self._fold(int(round(target)))
 
             for step, dur in motif:
-                if at >= pulses - 1 or placed >= budget:
+                if at >= units or placed >= budget:
                     break
                 leap = abs(step) > 1
                 # Gap-fill: after a leap, the ear wants stepwise motion back.
@@ -344,28 +359,35 @@ class Phrasing:
                     step = -1 if step > 0 else 1
                 prev_pos, pos = pos, self._fold(pos + step)
 
-                start_s = at * pulse_s
-                held = min(dur, pulses - 1 - at)
-                dur_s = held * pulse_s * ARTICULATION
-                if dur_s <= 0.02:
+                start_s = at * unit_s
+                held = fit_value(dur, units - at)
+                if held == 0:
                     break
+                dur_s = held * unit_s * ARTICULATION
 
-                # Metric hierarchy: the first note of a statement is the strong
-                # one, and the arch shapes the rest.
-                accent = 1.0 if at == 0 or step == 0 else 0.88
-                arch = 1.0 - mood.sweep_depth * abs(2.0 * (at / pulses) - 1.0)
+                # Metric hierarchy, from the bar rather than from the phrase:
+                # a downbeat is the strong position, other beats are next, and
+                # anything between beats is weakest.
+                if at % meter.units_per_measure == 0:
+                    accent = 1.0
+                elif at % meter.UNITS_PER_BEAT == 0:
+                    accent = 0.94
+                else:
+                    accent = 0.86
+                arch = 1.0 - mood.sweep_depth * abs(2.0 * (at / units) - 1.0)
                 velocity = max(1, min(127, int(round(
                     layer_velocity * arch * accent))))
 
                 if abs(pos - prev_pos) > 2 and rng.random() < orn_rate:
                     scheduled += self._run_into(prev_pos, pos, start_s,
-                                                pulse_s, velocity)
-                if held >= 2 and rng.random() < trill_rate:
-                    scheduled += self._trill(pos, start_s, dur_s, velocity)
-                elif rng.random() < orn_rate:
-                    scheduled += self._ornament(pos, start_s, dur_s, velocity,
-                                                mood)
+                                                unit_s, velocity)
+                if held >= 4 and rng.random() < trill_rate:
+                    scheduled += self._trill(pos, start_s, dur_s, velocity,
+                                             unit_s, held)
                 else:
+                    if rng.random() < orn_rate:
+                        scheduled += self._ornament(pos, start_s, velocity,
+                                                    mood)
                     scheduled.append(Note(self.notes[pos], start_s, dur_s,
                                           velocity))
                 at += held
@@ -382,7 +404,13 @@ class Phrasing:
             if last is not None:
                 home = min(rests, key=lambda p: abs(p - pos))
                 last.name = self.notes[home]
-                last.dur_s = max(last.dur_s, pulse_s * 1.6 * ARTICULATION)
+                # A cadence wants length: give it a half note where the breath
+                # still has room for one, never less than it already had, and
+                # never more than is left -- a written value the phrase runs
+                # out of time for is not a value it has.
+                room = units - round(last.start_s / unit_s)
+                last.dur_s = max(last.dur_s,
+                                 fit_value(4, room) * unit_s * ARTICULATION)
 
         self.last_role = f'{self.role}:{self.relation}'
         self.role = "call" if answering else "answer"
