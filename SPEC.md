@@ -500,6 +500,8 @@ Mourning, Pastoral, Ceremonial, Restless, Sleep**.
 | register bias | −1..+1 | 0.0 | +0.4 | −0.3 |
 | dynamic sweep depth | 0–1 | 0.25 | 0.55 | 0.15 |
 | `pushed` layer bias | 0–1 | 0.15 | 0.60 | 0.02 |
+| trill rate | 0–1 | 0.10 | 0.45 | 0.02 |
+| call/answer contrast | 0–1 | 0.55 | 0.35 | 0.30 |
 | breath mean (s) | 3–14 | 8.0 | 5.0 | 11.0 |
 
 *(Numbers are a starting point to tune by ear, not derived values.)*
@@ -532,6 +534,13 @@ schedule_melody(breath_len, mood):
         rest 1-2 pulses                                 # breathe between them
     cadence: land the last note on a strong rest point and lengthen it
 ```
+
+**Breaths alternate call and answer.** A call sits lower in the range, stays
+plainer and usually leaves the phrase unresolved; the answer climbs, takes the
+ornaments and lands on a rest point. `call/answer contrast` sets how far apart
+the two sit, and at 0 every breath is treated alike. A held note may be
+**trilled** — shaken against its upper neighbour and resolved back onto itself —
+at `trill rate`, which the answer raises and the call lowers.
 
 **Stability is measured against the drone**, because the drone is the only
 harmony present: unison and fifth are rest points, thirds and sixths softer

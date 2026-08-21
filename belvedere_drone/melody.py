@@ -150,6 +150,11 @@ class Phrasing:
         self.stability = stability(notes, root)
         self.motif = None
         self.statements = 0
+        # Breaths alternate roles: a call that leaves the line open, then an
+        # answer that ornaments it and resolves. Tension and release as a
+        # phrase-pair, with the breath as the phrase.
+        self.role = "call"
+        self.last_role = "call"
 
     # -- helpers ----------------------------------------------------------
 
@@ -189,6 +194,26 @@ class Phrasing:
         return fn(self.motif, self.rng)
 
     # -- ornaments --------------------------------------------------------
+
+    def _trill(self, pos, start_s, dur_s, velocity):
+        """Shake between the note and its upper neighbour, landing back on it.
+
+        A trill wants a note long enough to shake, so the caller only offers
+        held ones; it resolves onto the main note so the line still arrives
+        where the motif said it would.
+        """
+        upper = self._fold(pos + 1)
+        rate = max(0.055, min(0.085, dur_s / 8))
+        n = max(3, int(dur_s / rate))
+        out = []
+        for i in range(n):
+            p = pos if i % 2 == 0 else upper
+            last = i == n - 1
+            out.append(Note(self.notes[pos if last else p], start_s + i * rate,
+                            dur_s - i * rate if last else rate,
+                            velocity if i % 2 == 0 else max(1, int(velocity * .9)),
+                            is_grace=not last))
+        return out
 
     def _ornament(self, pos, start_s, dur_s, velocity, mood):
         """Decorate a structural note. The skeleton stays; this is the voice."""
@@ -233,14 +258,26 @@ class Phrasing:
         if not self.notes:
             raise ValueError("melody chamber has no playable notes")
 
+        # Call and answer: the call sits lower, stays plainer and tends to
+        # leave the phrase open; the answer climbs, decorates and resolves.
+        answering = self.role == "answer"
+        contrast = mood.call_response
+        orn_rate = min(1.0, mood.ornament_rate *
+                       (1.0 + 0.9 * contrast if answering else 1.0 - 0.7 * contrast))
+        trill_rate = min(1.0, mood.trill_rate *
+                         (1.0 + contrast if answering else 1.0 - 0.8 * contrast))
+        cadence_p = min(1.0, mood.cadence_strength *
+                        (1.0 + contrast if answering else 1.0 - contrast))
+
         pulses = max(4, round(breath_len_s / PULSE_TARGET_S))
         pulse_s = breath_len_s / pulses
         # notes_per_breath sets how much of the breath carries notes; the rest
         # is silence the phrase can breathe in.
         budget = max(2, min(pulses, int(round(mood.notes_per_breath * 1.4))))
 
-        centre = (len(self.notes) - 1) * (0.5 + mood.register_bias * 0.35)
         span = max(1.5, (len(self.notes) - 1) * 0.45)
+        centre = ((len(self.notes) - 1) * (0.5 + mood.register_bias * 0.35)
+                  + span * (0.5 if answering else -0.5) * contrast)
 
         scheduled = []
         pos = self._clamp(int(round(centre)))
@@ -276,10 +313,12 @@ class Phrasing:
                 velocity = max(1, min(127, int(round(
                     layer_velocity * arch * accent))))
 
-                if abs(pos - prev_pos) > 2 and rng.random() < mood.ornament_rate:
+                if abs(pos - prev_pos) > 2 and rng.random() < orn_rate:
                     scheduled += self._run_into(prev_pos, pos, start_s,
                                                 pulse_s, velocity)
-                if rng.random() < mood.ornament_rate:
+                if held >= 2 and rng.random() < trill_rate:
+                    scheduled += self._trill(pos, start_s, dur_s, velocity)
+                elif rng.random() < orn_rate:
                     scheduled += self._ornament(pos, start_s, dur_s, velocity,
                                                 mood)
                 else:
@@ -291,7 +330,8 @@ class Phrasing:
             at += rng.choice((1, 1, 2))            # breathe between statements
 
         # Cadence: land on a rest point rather than overwriting with the root.
-        if scheduled and rng.random() < mood.cadence_strength:
+        # A call is meant to stay open, so it resolves far less often.
+        if scheduled and rng.random() < cadence_p:
             rests = self._rest_positions(strong=True)
             last = max((n for n in scheduled if not n.is_grace),
                        key=lambda n: n.start_s, default=None)
@@ -300,5 +340,6 @@ class Phrasing:
                 last.name = self.notes[home]
                 last.dur_s = max(last.dur_s, pulse_s * 1.6 * ARTICULATION)
 
+        self.last_role, self.role = self.role, "call" if answering else "answer"
         scheduled.sort(key=lambda n: n.start_s)
         return scheduled

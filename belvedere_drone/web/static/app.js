@@ -14,6 +14,8 @@ const LABELS = {
   register_bias: "register bias",
   sweep_depth: "sweep depth",
   pushed_bias: "pushed bias",
+  trill_rate: "trill",
+  call_response: "call / answer",
   breath_mean_s: "breath mean",
   breath_spread_s: "breath spread",
   inhale_s: "inhale gap",

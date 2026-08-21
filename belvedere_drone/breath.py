@@ -91,4 +91,6 @@ class Performer:
         self._last_sequence = sequence
 
         self._index += 1
-        return Breath(self._index, length, inhale, layer, self.root, notes)
+        plan = Breath(self._index, length, inhale, layer, self.root, notes)
+        plan.role = self.phrasing.last_role      # call or answer, for display
+        return plan

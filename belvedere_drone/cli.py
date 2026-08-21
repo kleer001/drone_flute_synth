@@ -81,7 +81,8 @@ def cmd_play(args):
 
     def report(plan):
         print(f"breath {plan.index:4d}  {plan.length_s:5.2f}s  "
-              f"{plan.layer:7}  {' '.join(plan.note_sequence())}")
+              f"{plan.layer:7} {plan.role:7} "
+              f"{' '.join(plan.note_sequence())}")
         sys.stdout.flush()
 
     engine.run(on_breath=report, max_breaths=args.max_breaths,
