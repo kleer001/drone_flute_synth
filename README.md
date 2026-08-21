@@ -83,6 +83,11 @@ Load `build/recorder-drone-c.organ` in GrandOrgue first; `play` finds the
 opening a port. Every performance prints its seed, and the seed reproduces it
 byte for byte.
 
+**First run only:** GrandOrgue ignores MIDI until a manual is taught to
+listen. Right-click the keyboard in its window, choose *Listen for events*,
+wait for a note, then OK — set *Lowest velocity* to 1 if offered 0. It is
+remembered per organ. See RESEARCH.md §9 for why.
+
 Add `--gui` for the web control surface on `http://127.0.0.1:8737/` — root,
 mood, the eight mood weights, breath shape and seed, edited as a working copy
 and submitted as a set that lands whole on the next breath boundary. The

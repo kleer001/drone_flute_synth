@@ -164,7 +164,7 @@ def _emit_stop(lines, index, chamber, keys, rank_index):
     # Both chambers sound from the first note; the app, not the console,
     # decides what plays.
     lines.append("DefaultToEngaged=Y")
-    lines.append("Displayed=N")
+    lines.append("Displayed=Y")
     lines.append("GCState=1")
     lines.append("")
 
@@ -224,8 +224,12 @@ def build_odf(profile, allocation):
               f"NumberOfStops={len(names)}"]
     for i in range(1, len(names) + 1):
         lines.append(f"Stop{i:03d}={i}")
+    # The manual has to be visible. GrandOrgue ignores incoming notes until a
+    # manual has a MIDI receiver assigned, and the only supported way to assign
+    # one is to right-click the manual and "Listen for events" -- which is
+    # impossible on a console that draws nothing.
     lines += ["NumberOfCouplers=0", "NumberOfDivisionals=0",
-              "NumberOfTremulants=0", "NumberOfSwitches=0", "Displayed=N", ""]
+              "NumberOfTremulants=0", "NumberOfSwitches=0", "Displayed=Y", ""]
 
     for i, name in enumerate(names, start=1):
         _emit_stop(lines, i, profile.chambers[name], allocation[name], i)

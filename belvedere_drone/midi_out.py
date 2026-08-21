@@ -59,13 +59,21 @@ class MidiOut:
         if not available:
             raise RuntimeError("no ALSA MIDI output ports found")
         if port_name is None:
-            match = [p for p in available if "GrandOrgue" in p]
-            if not match:
-                raise RuntimeError(
-                    "no GrandOrgue MIDI input port found. Start GrandOrgue and "
-                    "load the organ first, or pass --port. Available: "
-                    + ", ".join(available))
-            return match[0]
+            # Prefer the ALSA "Midi Through" port over GrandOrgue's own. A
+            # receiver is bound to the device it was taught, so the device has
+            # to be the same every run -- and Midi Through is a kernel port
+            # that exists whether or not GrandOrgue is up, where GrandOrgue's
+            # own port appears only after it starts. Connecting straight to
+            # GrandOrgue's port is also the arrangement its maintainers call
+            # incompatible with sequencer software (RESEARCH.md §10).
+            for wanted in ("Midi Through", "GrandOrgue"):
+                match = [p for p in available if wanted in p]
+                if match:
+                    return match[0]
+            raise RuntimeError(
+                "no MIDI port found for GrandOrgue. Expected an ALSA "
+                "'Midi Through' port or a running GrandOrgue, or pass --port. "
+                "Available: " + ", ".join(available))
         match = [p for p in available if port_name in p]
         if not match:
             raise RuntimeError(

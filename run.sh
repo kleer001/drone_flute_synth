@@ -179,5 +179,17 @@ if [[ $GUI -eq 1 ]]; then
     fi
 fi
 
+cat <<'NOTE'
+
+  ---------------------------------------------------------------------
+  FIRST RUN ONLY -- GrandOrgue ignores MIDI until you teach it a manual.
+  In the GrandOrgue window, right-click the keyboard and choose
+  "Listen for events", wait for this player to send a note, then OK.
+  Set Lowest velocity to 1 if it offers 0, or note-offs are ignored.
+  GrandOrgue remembers it; you will not have to do this again.
+  ---------------------------------------------------------------------
+
+NOTE
+
 say "Playing — Ctrl-C to stop"
 "$PY" -m belvedere_drone.cli play "$PROFILE" "${PLAY_ARGS[@]}"

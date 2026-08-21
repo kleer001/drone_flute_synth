@@ -369,17 +369,45 @@ The fix is to pad any rank below two pipes with a `DUMMY` entry, which
 - **Polyphony 0 is not evidence that nothing is sounding.** It counts keyed
   pipes, and an effects stop has none.
 
-### Open: no MIDI note has yet produced sound
+### Why no MIDI note produced sound, and what fixes it
 
-Separately, with the effects-stop tone gone, sweeping every key the manual
-exposes produced silence — on GrandOrgue's own virtual input port and on
-`Midi Through` alike. The audio path is known good, since the effects stop drove
-it. `GOMidiReceiver::Load` reads `NumberOfMIDIEvents` with a default of 0, and a
-manual with no assigned event matches nothing, which fits: GrandOrgue expects a
-human to assign the manual's MIDI event once, and this organ's manual is
-`Displayed=N` so there is nothing to right-click. Writing an explicit `Note`
-event into the config's `[MidiInitial001]` did not take effect, and the cause is
-not yet established. Until it is, the app has never been heard.
+GrandOrgue **ignores incoming notes until a manual has a MIDI receiver bound to
+it.** `GOMidiReceiver::Load` reads `NumberOfMIDIEvents` with a default of 0, and
+a receiver with no events matches nothing, so a fresh install is deaf by design.
+This is not a bug and not our ODF's fault; it is how the program works, and it
+is the single reason this app made no sound for its whole first life.
+
+Verified, so the transport is not the problem: with the player running,
+`aconnect -l` shows our client subscribed to GrandOrgue's input port. The events
+arrive. Nothing consumes them.
+
+The Rosegarden project hit the same wall connecting a sequencer to GrandOrgue
+([bug 1563](https://sourceforge.net/p/rosegarden/bugs/1563/)), where Rosegarden's
+maintainer put it plainly: *"MIDI (sequencer) software, that just tries to
+connect to existing MIDI ports, is not compatible with GrandOrgue."* The fixes
+recorded there and in [discussion #1800](https://github.com/GrandOrgue/grandorgue/discussions/1800):
+
+- Assign the manual a device, channel and note range in GrandOrgue itself. The
+  easy route is right-click the manual → **Listen for events** → play a note.
+- **Lowest velocity must be 1, not 0**, or every note-off is read as another
+  note-on and keys never release.
+- Prefer the ALSA **Midi Through** port to a direct connection.
+
+**Two attempts to seed this from the config file failed.** Writing the receiver
+keys into `[MidiInitial001]` -- with an empty device, then with GrandOrgue's own
+logical device string -- produced silence both times. The in-app assignment is
+the supported path and the one this project now uses.
+
+**What the ODF had to change.** The generated console drew nothing: manual and
+stops were all `Displayed=N`, so there was no keyboard to right-click and the
+supported setup path was unreachable. They are drawn now, and GrandOrgue renders
+an eight-key manual with its drawstops on the built-in panel.
+
+**What the player had to change.** `midi_out` prefers `Midi Through` over
+GrandOrgue's own port. A receiver is bound to the device it was taught, so the
+device must be identical every run -- and Midi Through is a kernel port that
+exists whether or not GrandOrgue is running, where GrandOrgue's own port appears
+only after it starts.
 
 ---
 

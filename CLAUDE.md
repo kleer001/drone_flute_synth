@@ -61,6 +61,12 @@ performance and both `cli.py` and `web/server.py` are clients of it. Nothing in
 `control.py` imports the server, and the server never touches the scheduler
 thread, the MIDI port, or the panic path.
 
+GrandOrgue ignores incoming notes until a manual has a MIDI receiver bound in
+its own window (right-click the manual, *Listen for events*). The generated
+console draws its manual and stops so that is possible, and `midi_out` sends via
+`Midi Through` so the binding stays valid across runs. RESEARCH.md §9 has the
+sources and the two failed attempts at seeding it from config.
+
 There is no test suite. Verification is measurement, and there are two gates:
 `loop_qa.py` for the sample side, and `cli.py check` for the MIDI side. A change
 to loop or DSP code is unverified until it has been run against a real sample
