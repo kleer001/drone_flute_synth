@@ -201,6 +201,8 @@ def build_odf(profile, allocation):
 
     # One Enclosure on CC 11 gives continuous level within a breath (§9).
     lines += ["[Enclosure001]", "Name=Breath", "AmpMinimumLevel=0",
+              # Same mechanism for enclosures: 1 means enclosure 1.
+              "MIDIInputNumber=1",
               "Displayed=N", ""]
 
     # One windchest per chamber: independent chambers, one shared air supply.
@@ -217,6 +219,11 @@ def build_odf(profile, allocation):
 
     lines += ["[Manual001]",
               "Name=Flute",
+              # ODF reference, Manual objects: "0 means no association, 1 maps
+              # to pedal, 2 to first manual". Omitting it defaults to 0, and a
+              # manual with no association never inherits any MIDI settings --
+              # which is why this organ ignored every note it was ever sent.
+              "MIDIInputNumber=2",
               f"NumberOfLogicalKeys={total_keys}",
               "FirstAccessibleKeyLogicalKeyNumber=1",
               f"FirstAccessibleKeyMIDINoteNumber={BASE_MIDI_NOTE}",
