@@ -24,7 +24,9 @@
 <div class="transport">
   <button id="runbtn" class="run" title="Start / stop">&#9632;</button>
   <span id="runlamp" class="lamp" title="sounding"></span>
-  <input type="range" id="level" min="0" max="127" step="1" title="Master level">
+  <span class="live-tag" title="Transport controls apply the moment you move them; they are not part of the Submit set.">live</span>
+  <input type="range" id="level" min="0" max="127" step="1"
+         title="Master level — applies at once, no Submit">
   <output id="level-out">0</output>
   <button id="panic" class="panic" title="All sound off">panic</button>
   <span class="meta" id="engine-line"></span>
