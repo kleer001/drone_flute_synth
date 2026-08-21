@@ -40,12 +40,12 @@ python3 tools/loopfind.py <sustain_dir> <out_dir>
 python3 tools/loop_qa.py <out_dir>/*.wav
 
 # app: profile -> ODF, then play into a running GrandOrgue
-python3 -m belvedere_drone.cli odf profiles/naf-double-drone-as.toml build
-python3 -m belvedere_drone.cli check profiles/naf-double-drone-as.toml --out-dir build
-python3 -m belvedere_drone.cli play profiles/naf-double-drone-as.toml --out-dir build --mood pastoral
+python3 -m belvedere_drone.cli odf profiles/recorder-drone-c.toml build
+python3 -m belvedere_drone.cli check profiles/recorder-drone-c.toml --out-dir build
+python3 -m belvedere_drone.cli play profiles/recorder-drone-c.toml --out-dir build --mood pastoral
 
 # the same performance with the web control surface (SPEC §10)
-python3 -m belvedere_drone.cli play profiles/naf-double-drone-as.toml --out-dir build --gui
+python3 -m belvedere_drone.cli play profiles/recorder-drone-c.toml --out-dir build --gui
 ```
 
 `play` needs GrandOrgue running with the generated organ loaded; it finds the

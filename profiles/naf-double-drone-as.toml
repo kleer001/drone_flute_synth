@@ -1,5 +1,10 @@
 # NAF-style double drone flute, key of A#/Bb.
 #
+# NOT the shipped profile -- profiles/recorder-drone-c.toml is. This one is
+# kept because A#/Bb is the key NAF sources talk in, but the root costs it:
+# VCSL records no C#5, D#5, F5 or G#5, so four of six melody pipes borrow a
+# neighbouring recording and are shifted a semitone, formants and all.
+#
 # The cents table is a JUST minor pentatonic, not a measured Native American
 # flute scale. Spike S1 went looking for the measured scale and did not find
 # one: see RESEARCH.md §7. Just intonation is used because it is the one

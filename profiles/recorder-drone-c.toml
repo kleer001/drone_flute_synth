@@ -1,0 +1,68 @@
+# Drone flute in C, just intonation, every pipe a true recording.
+#
+# This profile exists because of what the sample set is. VCSL's baroque
+# recorders are sampled whole-tone -- C D E F# G# A#, every step two semitones
+# -- with one stray G5. A scale needing semitone steps can only be built by
+# transposing recordings, and the A# profile does exactly that for four of its
+# six melody notes, dragging each sample's formants a semitone with it.
+#
+# On C nothing has to be transposed. C5 -> G5 is the only perfect fifth
+# anywhere in the thirteen recordings, and it is the interval a drone
+# instrument most needs: every melody note here sounds against a fixed root,
+# so a tempered fifth would beat audibly where a just one does not.
+#
+# The scale is the harmonic series of C, harmonics 8 9 10 11 12 14 16 -- which
+# is what these seven recorded pitches spell. The cents table below takes the
+# conservative five-limit reading of those degrees rather than the raw
+# harmonics, so no interval moves more than 14 cents:
+#
+#   note   just ratio to the root      cents      12-TET   deviation
+#   C5     2/1      octave            1200.00      1200      +0.00
+#   D5     9/4      major 9th         1403.91      1400      +3.91
+#   E5     5/2      major 10th        1586.31      1600     -13.69
+#   F#5    45/16    aug 11th          1790.22      1800      -9.78
+#   G5     3/1      twelfth           1901.96      1900      +1.96
+#   A#5    32/9     minor 14th        2196.09      2200      -3.91
+#   C6     4/1      double octave     2400.00      2400      +0.00
+#
+# The raw harmonic-series reading is the other defensible choice and is a real
+# overtone-flute sound: 11/8 puts F#5 at -48.68 cents and 7/4 puts A#5 at
+# -31.17. That is a quartertone-ish F# and it is deliberate on instruments
+# built around the natural series. It is not used here, because a ~49 cent
+# offset is a different instrument rather than a tuning refinement.
+#
+# The octave is exactly 2:1. Spike S1 found nothing supporting a stretched
+# octave, so none is asserted.
+
+id            = "recorder-drone-c-just"
+display       = "Drone flute in C, just intonation, no borrowed samples"
+family        = "recorder-drone"
+concert_a_hz  = 440.0
+
+tuning_origin = "maker-spec"
+tuning_source = "Southern Cross Flutes, 'Natural Tuning vs Equal Temperament' (https://www.southerncrossflutes.com/natural-tuning-vs-equal-temperament/) -- states drone flutes are tuned to just intonation on request. The maker page publishes no cents values, so the ratios above are this project's realisation of the tuning the maker names, not a measurement of any instrument."
+sample_source = "vcsl-cc0"
+sample_note   = "Baroque soprano recorder from VCSL (CC0). A recorder is a duct flute like a drone flute, but it is not one: the structure is right, the timbre is a proxy. Every note this profile plays is a note VCSL actually recorded, so no pipe is transposed and no formants are shifted; PitchTuning carries only the cents table."
+
+[chambers.drone]
+holes = 0
+notes = ["C4"]
+
+[chambers.melody]
+holes = 6
+# Harmonics 8 9 10 11 12 14 16 of C -- and, not by coincidence, seven of the
+# thirteen pitches VCSL recorded.
+notes = ["C5", "D5", "E5", "F#5", "G5", "A#5", "C6"]
+# Deviation from 12-TET, in cents. THE primary artifact of this file.
+cents = { "C5" = 0.0, "D5" = 3.91, "E5" = -13.69, "F#5" = -9.78, "G5" = 1.96, "A#5" = -3.91, "C6" = 0.0 }
+# No pitch-fill: every note above is recorded, so nothing borrows.
+samples = {}
+
+[breath]
+mean_s = 7.0
+spread_s = 2.5
+inhale_s = 0.7
+
+[odf]
+path = "recorder-drone-c.organ"
+sample_dir = "samples"

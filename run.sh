@@ -22,8 +22,8 @@ LOOPS="$BUILD/loops"
 VENV="$REPO/.venv"
 PY="$VENV/bin/python"
 
-PROFILE="$REPO/profiles/naf-double-drone-as.toml"
-ORGAN="$BUILD/naf-double-drone-as.organ"
+PROFILE="$REPO/profiles/recorder-drone-c.toml"
+ORGAN="$BUILD/recorder-drone-c.organ"
 
 GO_VERSION="3.17.3-1"
 GO_URL="https://github.com/GrandOrgue/grandorgue/releases/download/${GO_VERSION}/grandorgue-${GO_VERSION}.x86_64.AppImage"

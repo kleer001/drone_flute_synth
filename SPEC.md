@@ -90,6 +90,16 @@ That is a defensible, sourced, audible reason for a non-equal cents table —
 tune drone flutes this way on request — and it is what the shipped profile uses,
 recorded as `tuning_origin = "maker-spec"`.
 
+**The root follows the sample set, not the other way round.** VCSL's recorders
+are sampled whole-tone, so a scale needing semitone steps can only be built by
+transposing recordings — which drags each sample's formants along and makes the
+cents table do two unrelated jobs at once. `C5 -> G5` is the only perfect fifth
+in the thirteen recordings, so a C root is the one that needs no transposition
+at all: the seven playable pitches are harmonics 8 9 10 11 12 14 16 of C, and
+`PitchTuning` then carries tuning and nothing else. `profiles/recorder-drone-c.toml`
+ships on that basis and no pipe borrows. The A# profile is kept as the
+NAF-keyed alternative and pays for its root with four transposed pipes.
+
 A GrandOrgue temperament is twelve offsets indexed by pitch class
 (`GOTemperamentCent::m_Tuning[12]`), so it is octave-periodic by construction
 and could not express a stretched octave even if one turned up later. Per-pipe
@@ -841,7 +851,7 @@ dependency, and §10.5 gets that to zero.
 Run criteria 1, 2, 5 and 6 with:
 
 ```bash
-python3 -m belvedere_drone.cli check profiles/naf-double-drone-as.toml --out-dir build
+python3 -m belvedere_drone.cli check profiles/recorder-drone-c.toml --out-dir build
 ```
 
 ## 13. Spikes, in order

@@ -66,12 +66,12 @@ sample-to-sample step).
 Build the organ, check it, and play it:
 
 ```bash
-python3 -m belvedere_drone.cli odf   profiles/naf-double-drone-as.toml build --loops <out_dir>
-python3 -m belvedere_drone.cli check profiles/naf-double-drone-as.toml --out-dir build
-python3 -m belvedere_drone.cli play  profiles/naf-double-drone-as.toml --out-dir build --mood pastoral
+python3 -m belvedere_drone.cli odf   profiles/recorder-drone-c.toml build --loops <out_dir>
+python3 -m belvedere_drone.cli check profiles/recorder-drone-c.toml --out-dir build
+python3 -m belvedere_drone.cli play  profiles/recorder-drone-c.toml --out-dir build --mood pastoral
 ```
 
-Load `build/naf-double-drone-as.organ` in GrandOrgue first; `play` finds the
+Load `build/recorder-drone-c.organ` in GrandOrgue first; `play` finds the
 `GrandOrgue` ALSA port by name. `--dry-run` records the MIDI stream instead of
 opening a port. Every performance prints its seed, and the seed reproduces it
 byte for byte.
