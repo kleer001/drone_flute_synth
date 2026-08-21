@@ -59,8 +59,10 @@ class Performer:
                 f"drone chamber cannot sound {self.root!r}; it has "
                 f"{drone.notes}")
         self.melody_notes = sorted(
-            profile.chambers["melody"].notes,
-            key=lambda n: (int(n[-1]), n[:-1]))
+            profile.chambers["melody"].notes, key=melody.midi_of)
+        # The motif lives here rather than in a single breath: restating it
+        # across breaths is where the line gets its unity (SPEC §8).
+        self.phrasing = melody.Phrasing(rng, self.melody_notes, self.root)
         self._index = 0
         self._last_sequence = None
 
@@ -81,8 +83,8 @@ class Performer:
         # would bias the note distribution in a way that is hard to reason
         # about. Redrawing keeps the walk's statistics intact.
         for _ in range(8):
-            notes = melody.schedule(self.rng, self.melody_notes, self.mood,
-                                    length, self.root, LAYER_VELOCITY[layer])
+            notes = self.phrasing.breath(self.mood, length,
+                                         LAYER_VELOCITY[layer])
             sequence = tuple(n.name for n in notes if not n.is_grace)
             if sequence != self._last_sequence:
                 break

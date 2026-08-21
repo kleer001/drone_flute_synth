@@ -506,28 +506,37 @@ Mourning, Pastoral, Ceremonial, Restless, Sleep**.
 
 ### Melody algorithm
 
-A constrained weighted random walk over the chamber's playable notes —
-deliberately legible and hand-tunable:
+A **motif engine**, not a random walk. The first version drew each breath fresh
+and had variety with no unity: nothing was ever restated, so nothing was
+recognisable, and the line meandered over a Beta-distributed scatter of onsets
+with no pulse to lean on.
 
 ```
+Phrasing (persists across breaths -- this is where unity comes from):
+    motif       = 3-5 (step, pulses) pairs, mostly stepwise
+    statements  = how many times it has been restated
+
 schedule_melody(breath_len, mood):
-    n     = round(mood.notes_per_breath * jitter(0.85, 1.15))
-    times = sorted(n draws from Beta(a,b) scaled to breath_len)
-            # Beta shapes the phrase: (2,4) front-loaded, (4,2) back-loaded,
-            # (3,3) arch. Mood picks the shape.
-    cur   = weighted_choice(available, bias=mood.register_bias)
-    for i, t in enumerate(times):
-        if random() < mood.step_leap_ratio:
-            cur = neighbour(cur, available)          # adjacent in the scale
-        else:
-            cur = weighted_leap(cur, available)      # 3rd/4th/5th, weighted down
-        if random() < mood.ornament_rate:
-            emit_grace(cur, t)                       # ~60 ms neighbour before
-        emit(cur, t, dur=next_t - t)
-    # cadence: land the last note on the drone root
-    if random() < mood.cadence_strength:
-        force_last(root)
+    pulses  = round(breath_len / 0.36s)      # the breath supplies the grid;
+    pulse   = breath_len / pulses            #   no global tempo exists
+    for each statement while budget remains:
+        motif = repeat the current motif, or transform it
+                (sequence / inversion / retrograde / augmentation /
+                 diminution / fragmentation), or start a new one after ~3
+        transpose the statement toward an arch peaking at 0.68 of the breath
+        for (step, dur) in motif:
+            after a leap, bias back stepwise            # gap-fill
+            reflect off the ends of the range           # never pin, never stick
+            emit at `at * pulse` for `dur * pulse * 0.9`  # notes breathe
+            sometimes ornament: grace / mordent / turn, or a run into a leap
+        rest 1-2 pulses                                 # breathe between them
+    cadence: land the last note on a strong rest point and lengthen it
 ```
+
+**Stability is measured against the drone**, because the drone is the only
+harmony present: unison and fifth are rest points, thirds and sixths softer
+ones, everything else wants to move. A cadence resolves onto one of them rather
+than overwriting the final note with the root.
 
 **Seeded and deterministic** — a good session reproduces from its seed alone,
 which is all the reproducibility a live-only app needs. Print the seed on start.
