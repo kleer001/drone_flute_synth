@@ -64,8 +64,6 @@ class Performer:
             raise ValueError(
                 f"drone chamber cannot sound {self.root!r}; it has "
                 f"{drone.notes}")
-        # The bar comes from the instrument, the tempo from the mood.
-        self.meter = Meter(mood.bpm, profile.beats_per_measure)
         self.melody_notes = sorted(
             profile.chambers["melody"].notes, key=melody.midi_of)
         # The motif lives here rather than in a single breath: restating it
@@ -73,6 +71,42 @@ class Performer:
         self.phrasing = melody.Phrasing(rng, self.melody_notes, self.root)
         self._index = 0
         self._last_sequence = None
+
+    @property
+    def meter(self):
+        """The bar comes from the instrument, the tempo from the mood.
+
+        Derived rather than stored: a stored copy has to be refreshed by hand
+        every time the mood changes, and a refresh that is forgotten is a
+        tempo control that silently stops working.
+        """
+        return Meter(self.mood.bpm, self.profile.beats_per_measure)
+
+    def retune(self, mood=None, root=None, breath_spread_s=None,
+               inhale_s=None):
+        """Change how the player plays without losing where it is.
+
+        Rebuilding would hand back a Performer seeded afresh: the random
+        stream would replay from the top, the motif under development would be
+        discarded and the breath count would restart. Which of these fields
+        the phrasing derives from is this module's business, so the knowledge
+        lives here rather than in each caller.
+        """
+        if mood is not None:
+            self.mood = mood
+        if breath_spread_s is not None:
+            self.breath_spread_s = breath_spread_s
+        if inhale_s is not None:
+            self.inhale_s = inhale_s
+        if root is not None and root != self.root:
+            drone = self.profile.chambers["drone"]
+            if root not in drone.notes:
+                raise ValueError(
+                    f"drone chamber cannot sound {root!r}; it has "
+                    f"{drone.notes}")
+            self.root = root
+            self.phrasing.root = root
+            self.phrasing.stability = melody.stability(self.melody_notes, root)
 
     def _choose_layer(self):
         if self.rng.random() < self.mood.pushed_bias:

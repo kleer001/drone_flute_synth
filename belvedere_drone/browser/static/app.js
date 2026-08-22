@@ -30,7 +30,7 @@ const MAKEUP = 6.0;
 
 // the graph, built once
 let master = null, dryGain = null, wetGain = null, convolver = null,
-    preDelay = null, tone = null, sum = null, limiter = null;
+    preDelay = null, tone = null, limiter = null;
 
 const LABELS = {
   notes_per_breath: "notes / breath", step_leap_ratio: "step : leap",
@@ -73,9 +73,8 @@ async function api(path, body) {
 
 /* ---------- the audio graph ----------
 
-   voices -> tone -> [ dry ---------------------> ] sum -> makeup
-                     [ wet -> preDelay -> conv -> ]           |
-                              master -> limiter -> destination            */
+   voices -> tone -> [ dry --------------------> ] master -> limiter
+                     [ wet -> preDelay -> conv -> ]              -> destination */
 
 function buildGraph() {
   limiter = ctx.createDynamicsCompressor();
@@ -90,9 +89,6 @@ function buildGraph() {
   master.gain.value = parseFloat($("master").value) * MAKEUP;
   master.connect(limiter);
 
-  sum = ctx.createGain();
-  sum.connect(master);
-
   tone = ctx.createBiquadFilter();
   tone.type = "lowpass";
   tone.frequency.value = parseFloat($("tone").value);
@@ -104,8 +100,8 @@ function buildGraph() {
   convolver = ctx.createConvolver();
   convolver.normalize = true;
 
-  tone.connect(dryGain).connect(sum);
-  tone.connect(wetGain).connect(preDelay).connect(convolver).connect(sum);
+  tone.connect(dryGain).connect(master);
+  tone.connect(wetGain).connect(preDelay).connect(convolver).connect(master);
   setWet(parseFloat($("wet").value));
   preDelay.delayTime.value = parseFloat($("predelay").value) / 1000;
   convolver.buffer = makeImpulse(parseFloat($("decay").value));
@@ -152,33 +148,35 @@ async function loadBuffers() {
 
 /* ---------- playing one note ---------- */
 
-function voice(chamber, noteName, at, dur, velocity) {
-  const spec = inst.voices[chamber][noteName];
+/* Every voice is the same thing: a loop from the sample set, at the pitch the
+   profile asks for. loopStart/loopEnd are the smpl chunk's own points and
+   detune is the cents table's own value, so neither is converted here. */
+function source(spec, at, until) {
   const loop = inst.loops[spec.file];
   const src = ctx.createBufferSource();
   src.buffer = buffers[spec.file];
   src.loop = true;
-  // The loop the sample was authored around, and the cents the profile says
-  // this pipe is off equal temperament. Both arrive as-is: no conversion.
   src.loopStart = loop.loop_start_s;
   src.loopEnd = loop.loop_end_s;
   src.detune.value = spec.cents;
+  src.start(at);
+  src.stop(until);
+  live.push(src);
+  src.onended = () => { live = live.filter((s) => s !== src); };
+  return src;
+}
 
+/* One melody note: a voice under its own short envelope, so it starts and
+   stops without a click inside the breath the caller is shaping. */
+function voice(spec, at, dur, velocity, dest) {
   const g = ctx.createGain();
-  const amp = Math.pow(velocity / 127, 1.4) * inst.chamber_gain[chamber];
-  const a = Math.min(0.012, dur / 3);
-  const r = Math.min(0.09, dur / 3);
+  const amp = Math.pow(velocity / 127, 1.4) * inst.chamber_gain.melody;
+  const a = Math.min(0.012, dur / 3), r = Math.min(0.06, dur / 3);
   g.gain.setValueAtTime(0, at);
   g.gain.linearRampToValueAtTime(amp, at + a);
   g.gain.setValueAtTime(amp, at + dur - r);
   g.gain.linearRampToValueAtTime(0, at + dur);
-
-  src.connect(g).connect(tone);
-  src.start(at);
-  src.stop(at + dur + 0.02);
-  live.push(src);
-  src.onended = () => { live = live.filter((s) => s !== src); };
-  return src;
+  source(spec, at, at + dur + 0.02).connect(g).connect(dest);
 }
 
 /* ---------- playing one breath ---------- */
@@ -195,51 +193,21 @@ function scheduleBreath(b) {
   env.gain.exponentialRampToValueAtTime(0.0001, t0 + b.length_s);
   env.connect(tone);
 
-  const droneSpec = inst.voices.drone[b.drone];
-  const loop = inst.loops[droneSpec.file];
-  const src = ctx.createBufferSource();
-  src.buffer = buffers[droneSpec.file];
-  src.loop = true;
-  src.loopStart = loop.loop_start_s;
-  src.loopEnd = loop.loop_end_s;
-  src.detune.value = droneSpec.cents;
-  const dg = ctx.createGain();
-  dg.gain.value = Math.pow(b.drone_velocity / 127, 1.4)
-                  * inst.chamber_gain.drone;
-  src.connect(dg).connect(env);
-  src.start(t0);
-  src.stop(t0 + b.length_s + 0.05);
-  live.push(src);
-  src.onended = () => { live = live.filter((s) => s !== src); };
+  const drone = ctx.createGain();
+  drone.gain.value = Math.pow(b.drone_velocity / 127, 1.4)
+                     * inst.chamber_gain.drone;
+  source(inst.voices.drone[b.drone], t0, t0 + b.length_s + 0.05)
+    .connect(drone).connect(env);
 
   for (const n of b.notes) {
     const at = t0 + n.start_s;
     const dur = Math.min(n.dur_s, b.length_s - n.start_s);
     if (dur <= 0.005) continue;
-    const spec = inst.voices.melody[n.name];
-    const lp = inst.loops[spec.file];
-    const s = ctx.createBufferSource();
-    s.buffer = buffers[spec.file];
-    s.loop = true;
-    s.loopStart = lp.loop_start_s;
-    s.loopEnd = lp.loop_end_s;
-    s.detune.value = spec.cents;
-    const g = ctx.createGain();
-    const amp = Math.pow(n.velocity / 127, 1.4) * inst.chamber_gain.melody;
-    const a = Math.min(0.012, dur / 3), r = Math.min(0.06, dur / 3);
-    g.gain.setValueAtTime(0, at);
-    g.gain.linearRampToValueAtTime(amp, at + a);
-    g.gain.setValueAtTime(amp, at + dur - r);
-    g.gain.linearRampToValueAtTime(0, at + dur);
-    s.connect(g).connect(env);
-    s.start(at);
-    s.stop(at + dur + 0.02);
-    live.push(s);
-    s.onended = () => { live = live.filter((x) => x !== s); };
+    voice(inst.voices.melody[n.name], at, dur, n.velocity, env);
   }
 
   cursor = t0 + b.length_s + b.inhale_s;
-  remember(b, t0);
+  remember(b);
 }
 
 /* ---------- the lookahead loop ---------- */
@@ -262,16 +230,17 @@ async function fill() {
 
 /* ---------- display ---------- */
 
-function remember(b, at) {
-  history.unshift({b, at});
-  history = history.slice(0, 8);
-  const names = b.notes.filter((n) => !n.grace).map((n) => n.name).join(" ");
-  $("log").textContent = history.map(({b}) =>
-    `breath ${String(b.index).padStart(3)}  ${b.bars} bar  ` +
-    `${b.length_s.toFixed(2)}s  ${b.layer.padEnd(6)} ${b.role.padEnd(18)} ` +
-    b.notes.filter((n) => !n.grace).map((n) => n.name).join(" ")
-  ).join("\n");
-  $("now").textContent = `breath ${b.index} · ${b.bars} bar · ${b.layer} · ${names}`;
+const sounded = (b) =>
+  b.notes.filter((n) => !n.grace).map((n) => n.name).join(" ");
+
+function remember(b) {
+  history = [b, ...history].slice(0, 8);
+  $("log").textContent = history.map((h) =>
+    `breath ${String(h.index).padStart(3)}  ${h.bars} bar  ` +
+    `${h.length_s.toFixed(2)}s  ${h.layer.padEnd(6)} ${h.role.padEnd(18)} ` +
+    sounded(h)).join("\n");
+  $("now").textContent =
+    `breath ${b.index} · ${b.bars} bar · ${b.layer} · ${sounded(b)}`;
 }
 
 function note(msg) { $("note").textContent = msg; }
@@ -466,22 +435,23 @@ for (const tab of document.querySelectorAll(".tab")) {
 }
 
 // Audio controls are ours and need no round trip, so they move while it sounds.
-const bind = (id, fn, fmt) => {
+const bind = (id, fn, fmt, onRelease = false) => {
   const el = $(id), out = $(`${id}-out`);
-  const apply = () => {
-    const v = parseFloat(el.value);
-    out.textContent = fmt(v);
-    if (ctx) fn(v);
-  };
-  el.addEventListener("input", apply);
-  apply();
+  const show = () => { out.textContent = fmt(parseFloat(el.value)); };
+  const apply = () => { if (ctx) fn(parseFloat(el.value)); };
+  el.addEventListener("input", onRelease ? show : () => { show(); apply(); });
+  if (onRelease) el.addEventListener("change", apply);
+  show();
 };
 bind("master",
      (v) => master.gain.setTargetAtTime(v * MAKEUP, ctx.currentTime, 0.02),
      (v) => v.toFixed(2));
 bind("wet", (v) => setWet(v), (v) => v.toFixed(2));
+// Only on release: makeImpulse fills sampleRate * seconds random samples, so
+// at the slider's top a single drag would build ~200 MB of impulse response
+// on the thread that is also feeding the scheduler.
 bind("decay", (v) => { convolver.buffer = makeImpulse(v); },
-     (v) => `${v.toFixed(1)} s`);
+     (v) => `${v.toFixed(1)} s`, true);
 bind("predelay",
      (v) => preDelay.delayTime.setTargetAtTime(v / 1000, ctx.currentTime, 0.02),
      (v) => `${v.toFixed(0)} ms`);
@@ -490,14 +460,20 @@ bind("tone", (v) => tone.frequency.setTargetAtTime(v, ctx.currentTime, 0.05),
 
 const roomSel = $("preset");
 for (const name of Object.keys(ROOMS)) roomSel.appendChild(new Option(name, name));
-roomSel.value = "chapel";
-roomSel.addEventListener("change", () => {
+function applyRoom() {
   const room = ROOMS[roomSel.value];
   for (const f of ROOM_FIELDS) {
     $(f).value = room[f];
     $(f).dispatchEvent(new Event("input"));
+    $(f).dispatchEvent(new Event("change"));
   }
-});
+}
+roomSel.addEventListener("change", applyRoom);
+// Through the same path as any other choice, so ROOMS is the only place a
+// room is written down and the select cannot label one thing while the
+// sliders say another.
+roomSel.value = "chapel";
+applyRoom();
 
 setInterval(fill, TICK_MS);
 setInterval(renderStatus, 250);

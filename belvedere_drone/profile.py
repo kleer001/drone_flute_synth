@@ -67,14 +67,12 @@ class Meter:
     UNITS_PER_BEAT = 2                     # the beat is a quarter; the unit an eighth
 
     def __init__(self, bpm, beats_per_measure):
+        # Both values are validated where they enter: beats_per_measure by
+        # the profile loader below, bpm by control.NUMERIC_PARAMS. Checking
+        # again here would be a second opinion that can disagree with the
+        # first -- the project validates at boundaries only.
         self.bpm = float(bpm)
         self.beats_per_measure = int(beats_per_measure)
-        if self.bpm <= 0:
-            raise ValueError(f"bpm must be positive, got {self.bpm}")
-        if self.beats_per_measure < 1:
-            raise ValueError(
-                f"beats_per_measure must be at least 1, got "
-                f"{self.beats_per_measure}")
         self.beat_s = 60.0 / self.bpm
         self.measure_s = self.beat_s * self.beats_per_measure
         self.unit_s = self.beat_s / self.UNITS_PER_BEAT

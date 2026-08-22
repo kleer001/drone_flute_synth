@@ -59,6 +59,41 @@ class ValidationError(Exception):
         self.errors = errors
 
 
+def validate_params(params, drone_notes):
+    """Whole-set validation. Returns {field: reason}; empty means valid.
+
+    Both instruments enforce this, so it lives once: a range that drifted
+    between them would mean a set one accepts and the other refuses.
+    """
+    errors = {}
+    for name, (lo, hi) in NUMERIC_PARAMS.items():
+        try:
+            value = float(params[name])
+        except (KeyError, TypeError, ValueError):
+            errors[name] = "must be a number"
+            continue
+        if not lo <= value <= hi:
+            errors[name] = f"must be between {lo:g} and {hi:g}"
+    if params.get("root") not in drone_notes:
+        errors["root"] = ("the drone chamber cannot sound this note; it has "
+                          + ", ".join(drone_notes))
+    try:
+        moods.get(params.get("mood", ""))
+    except ValueError as exc:
+        errors["mood"] = str(exc)
+    try:
+        int(params["seed"])
+    except (KeyError, TypeError, ValueError):
+        errors["seed"] = "must be a whole number"
+    return errors
+
+
+def preset_weights():
+    """Every preset's weight set, for a client that offers preset switching."""
+    return {name: {w: float(getattr(preset, w)) for w in MOOD_WEIGHTS}
+            for name, preset in moods.MOODS.items()}
+
+
 def _mood_from(name, weights):
     """A Mood built from the working weights, keeping the preset's phrase shape.
 
@@ -67,19 +102,8 @@ def _mood_from(name, weights):
     """
     preset = moods.get(name)
     return moods.Mood(
-        name=name,
-        notes_per_breath=weights["notes_per_breath"],
-        step_leap_ratio=weights["step_leap_ratio"],
-        ornament_rate=weights["ornament_rate"],
-        cadence_strength=weights["cadence_strength"],
-        register_bias=weights["register_bias"],
-        sweep_depth=weights["sweep_depth"],
-        pushed_bias=weights["pushed_bias"],
-        trill_rate=weights["trill_rate"],
-        call_response=weights["call_response"],
-        bpm=weights["bpm"],
-        breath_mean_s=weights["breath_mean_s"],
-        phrase_shape=preset.phrase_shape)
+        name=name, phrase_shape=preset.phrase_shape,
+        **{w: weights[w] for w in MOOD_WEIGHTS})
 
 
 def events_for_breath(plan, keys_drone, keys_melody):
@@ -120,24 +144,15 @@ class Controller:
 
         preset = moods.get(mood_name)
         drone_notes = profile.chambers["drone"].notes
-        self._committed = {
+        self._committed = {w: float(getattr(preset, w))
+                           for w in MOOD_WEIGHTS}
+        self._committed.update({
             "root": root or drone_notes[0],
             "mood": preset.name,
             "seed": int(seed),
-            "notes_per_breath": float(preset.notes_per_breath),
-            "step_leap_ratio": float(preset.step_leap_ratio),
-            "ornament_rate": float(preset.ornament_rate),
-            "cadence_strength": float(preset.cadence_strength),
-            "register_bias": float(preset.register_bias),
-            "sweep_depth": float(preset.sweep_depth),
-            "pushed_bias": float(preset.pushed_bias),
-            "trill_rate": float(preset.trill_rate),
-            "call_response": float(preset.call_response),
-            "bpm": float(preset.bpm),
-            "breath_mean_s": float(preset.breath_mean_s),
             "breath_spread_s": float(profile.breath_spread_s),
             "inhale_s": float(profile.inhale_s),
-        }
+        })
         self._working = dict(self._committed)
         self._in_flight = None
         self._lock = threading.RLock()
@@ -172,31 +187,9 @@ class Controller:
             self._working.update(changes)
 
     def validate(self, params):
-        """Whole-set validation. Returns {field: reason}; empty means valid."""
-        errors = {}
-        for name, (lo, hi) in NUMERIC_PARAMS.items():
-            try:
-                value = float(params[name])
-            except (KeyError, TypeError, ValueError):
-                errors[name] = "must be a number"
-                continue
-            if not lo <= value <= hi:
-                errors[name] = f"must be between {lo:g} and {hi:g}"
-
-        drone_notes = self.profile.chambers["drone"].notes
-        if params.get("root") not in drone_notes:
-            errors["root"] = (
-                "the drone chamber cannot sound this note; it has "
-                + ", ".join(drone_notes))
-        try:
-            moods.get(params.get("mood", ""))
-        except ValueError as exc:
-            errors["mood"] = str(exc)
-        try:
-            int(params["seed"])
-        except (KeyError, TypeError, ValueError):
-            errors["seed"] = "must be a whole number"
-        return errors
+        """Whole-set validation. Returns {field: reason}."""
+        return validate_params(
+            params, self.profile.chambers["drone"].notes)
 
     def submit(self):
         """Queue the working copy atomically. Returns a submission id."""
@@ -237,9 +230,7 @@ class Controller:
                 "presets": sorted(moods.MOODS),
                 # Sent so choosing a preset can overwrite the eight sliders
                 # client-side without a round trip (§10.7).
-                "preset_weights": {
-                    name: {w: float(getattr(preset, w)) for w in MOOD_WEIGHTS}
-                    for name, preset in moods.MOODS.items()},
+                "preset_weights": preset_weights(),
                 "readonly": {
                     "profile_id": self.profile.id,
                     "display": self.profile.display,

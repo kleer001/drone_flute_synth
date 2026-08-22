@@ -25,18 +25,22 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from .. import breath as breath_mod, melody, moods, profile as profile_mod
-from ..control import MOOD_WEIGHTS, NUMERIC_PARAMS, _mood_from
-from ..profile import Chamber, Meter, midi_of
+from ..control import (BREATH_ATTACK_S, BREATH_RELEASE_S, MOOD_WEIGHTS,
+                       NUMERIC_PARAMS, _mood_from, preset_weights,
+                       validate_params)
+from ..profile import Chamber, midi_of
 
 STATIC = Path(__file__).parent / "static"
+MAX_BODY = 64 * 1024
 CONTENT_TYPES = {".html": "text/html; charset=utf-8",
                  ".js": "text/javascript; charset=utf-8",
                  ".css": "text/css; charset=utf-8",
                  ".wav": "audio/wav"}
 
-# The breath envelope, matching the organ player's CC 11 shape (control.py).
-ATTACK_S = 0.25
-RELEASE_S = 0.35
+# The breath envelope is the organ player's CC 11 shape, not a second opinion
+# about it, so the numbers come from there rather than being restated.
+ATTACK_S = BREATH_ATTACK_S
+RELEASE_S = BREATH_RELEASE_S
 CHAMBER_GAIN = {"drone": 0.85, "melody": 1.0}
 
 
@@ -61,23 +65,18 @@ def read_loop_points(path):
     return start / sr, end / sr, sr
 
 
-# How far below the profile's own lowest drone note this instrument will go.
-# The profile stops where GrandOrgue does: it accepts PitchTuning only within
-# +/-1800 cents, so a second octave down -- which needs -2400 -- cannot be
-# written into an ODF at all. AudioBufferSourceNode.detune has no such limit,
-# so the browser can play the octaves the organ has to refuse.
-EXTRA_DRONE_OCTAVES = 2
+# The lowest octave this instrument will drone in, named absolutely rather
+# than as a count below whatever the profile happens to end at -- a relative
+# count silently reaches further every time the profile gains a lower note.
+#
+# The profile stops higher, where GrandOrgue does: it accepts PitchTuning only
+# within +/-1800 cents, so the -2400 a second octave needs cannot be written
+# into an ODF at all. AudioBufferSourceNode.detune has no such limit, so this
+# instrument can play the octaves the organ has to refuse.
+DRONE_FLOOR_OCTAVE = 1
 
 
-def _octave_below(note, octaves):
-    """'C4' -> 'C2' for two octaves down. Raises below octave 0."""
-    body, octave = note[:-1], int(note[-1])
-    if octave - octaves < 0:
-        raise ValueError(f"{note} has no octave {octave - octaves}")
-    return f"{body}{octave - octaves}"
-
-
-def extend_drone(profile, octaves=EXTRA_DRONE_OCTAVES):
+def extend_drone(profile, floor_octave=DRONE_FLOOR_OCTAVE):
     """Give this copy of the profile the low drones only Web Audio can reach.
 
     The on-disk profile is shared with the organ and stays exactly as it is;
@@ -90,11 +89,9 @@ def extend_drone(profile, octaves=EXTRA_DRONE_OCTAVES):
     source = drone.sample_for(lowest)
     notes, cents, samples = (list(drone.notes), dict(drone.cents),
                              dict(drone.samples))
-    for n in range(1, octaves + 1):
-        try:
-            name = _octave_below(lowest, n)
-        except ValueError:
-            break
+    body, lowest_octave = lowest[:-1], int(lowest[-1])
+    for octave in range(lowest_octave - 1, max(floor_octave, 0) - 1, -1):
+        name = f"{body}{octave}"
         if name in notes:
             continue
         notes.append(name)
@@ -112,6 +109,12 @@ class Instrument:
         self.profile = profile
         self.loops_dir = Path(loops_dir)
         self._lock = threading.RLock()
+        # Both are pure functions of the profile, and reading the loop points
+        # means reading every WAV header off disk. Do it once at startup --
+        # which also means construction fails on a missing loop, rather than
+        # the first request doing so.
+        self._voices = self._read_voices()
+        self._loops = self._read_loops()
         preset = moods.get(mood_name)
         # The same parameter set the organ player commits (control.py), so a
         # weight means the same thing in both instruments.
@@ -127,28 +130,8 @@ class Instrument:
 
     def validate(self, params):
         """{field: reason}; empty means the set is playable."""
-        errors = {}
-        for name, (lo, hi) in NUMERIC_PARAMS.items():
-            try:
-                value = float(params[name])
-            except (KeyError, TypeError, ValueError):
-                errors[name] = "must be a number"
-                continue
-            if not lo <= value <= hi:
-                errors[name] = f"must be between {lo:g} and {hi:g}"
-        drone_notes = self.profile.chambers["drone"].notes
-        if params.get("root") not in drone_notes:
-            errors["root"] = ("the drone chamber cannot sound this note; "
-                              "it has " + ", ".join(drone_notes))
-        try:
-            moods.get(params.get("mood", ""))
-        except ValueError as exc:
-            errors["mood"] = str(exc)
-        try:
-            int(params["seed"])
-        except (KeyError, TypeError, ValueError):
-            errors["seed"] = "must be a whole number"
-        return errors
+        return validate_params(params,
+                               self.profile.chambers["drone"].notes)
 
     def _rebuild(self):
         """Start the performance over from the seed."""
@@ -159,26 +142,11 @@ class Instrument:
             breath_spread_s=p["breath_spread_s"], inhale_s=p["inhale_s"])
 
     def _retune(self):
-        """Change how the player plays without interrupting what it is playing.
-
-        Rebuilding instead would hand back a Performer seeded afresh: the
-        random stream would replay from the top, the motif being developed
-        would be discarded, and the breath count would restart. Nudging a
-        slider would then wipe the musical thread, which is the opposite of
-        what a control is for. Only a new seed is allowed to do that.
-        """
+        """Reshape the performance without interrupting it (Performer.retune)."""
         p = self.params
-        mood = _mood_from(p["mood"], p)
-        perf = self.performer
-        perf.mood = mood
-        perf.meter = Meter(mood.bpm, self.profile.beats_per_measure)
-        perf.breath_spread_s = p["breath_spread_s"]
-        perf.inhale_s = p["inhale_s"]
-        if perf.root != p["root"]:
-            perf.root = p["root"]
-            perf.phrasing.root = p["root"]
-            perf.phrasing.stability = melody.stability(perf.melody_notes,
-                                                       p["root"])
+        self.performer.retune(mood=_mood_from(p["mood"], p), root=p["root"],
+                              breath_spread_s=p["breath_spread_s"],
+                              inhale_s=p["inhale_s"])
 
     def update(self, changes):
         """Apply a partial parameter change. Raises ValueError on a bad set."""
@@ -199,7 +167,7 @@ class Instrument:
             self.params = merged
             self._rebuild() if restart else self._retune()
 
-    def voices(self):
+    def _read_voices(self):
         """{chamber: {note: {file, cents}}} -- which loop sounds each note."""
         out = {}
         for name, chamber in self.profile.chambers.items():
@@ -209,10 +177,10 @@ class Instrument:
                 for note in chamber.notes}
         return out
 
-    def loops(self):
+    def _read_loops(self):
         """Loop points for every file the voices reference."""
         out = {}
-        for chamber in self.voices().values():
+        for chamber in self._voices.values():
             for spec in chamber.values():
                 if spec["file"] in out:
                     continue
@@ -237,16 +205,14 @@ class Instrument:
                 "mood_weights": list(MOOD_WEIGHTS),
                 "breath_fields": ["breath_spread_s", "inhale_s"],
                 "moods": sorted(moods.MOODS),
-                "preset_weights": {
-                    name: {w: float(getattr(preset, w)) for w in MOOD_WEIGHTS}
-                    for name, preset in moods.MOODS.items()},
+                "preset_weights": preset_weights(),
                 "drone_notes": list(self.profile.chambers["drone"].notes),
                 "meter": {"bpm": meter.bpm,
                           "beats_per_measure": meter.beats_per_measure,
                           "beat_s": meter.beat_s,
                           "measure_s": meter.measure_s},
-                "voices": self.voices(),
-                "loops": self.loops(),
+                "voices": self._voices,
+                "loops": self._loops,
                 "attack_s": ATTACK_S,
                 "release_s": RELEASE_S,
                 "chamber_gain": CHAMBER_GAIN,
@@ -324,6 +290,8 @@ class _Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         inst = self.server.instrument
         length = int(self.headers.get("Content-Length") or 0)
+        if length > MAX_BODY:
+            return self._json(400, {"error": "request body too large"})
         body = json.loads(self.rfile.read(length) or b"{}")
         if url.path == "/performance":
             try:
@@ -356,7 +324,6 @@ def main(argv=None):
 
     profile = extend_drone(profile_mod.load(args.profile))
     inst = Instrument(profile, args.loops, args.mood, args.seed, args.root)
-    inst.loops()                      # fail now if a loop is missing, not later
     httpd = serve(inst, args.host, args.port)
     print(f"profile : {profile.display}")
     print(f"mood    : {args.mood}")

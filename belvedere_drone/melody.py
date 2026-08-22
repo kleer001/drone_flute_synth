@@ -248,7 +248,7 @@ class Phrasing:
 
     # -- ornaments --------------------------------------------------------
 
-    def _trill(self, pos, start_s, dur_s, velocity, unit_s, held):
+    def _trill(self, pos, start_s, velocity, unit_s, held):
         """Shake with the upper neighbour, then resolve onto the main note.
 
         The shakes are grace: they decorate, and the note the motif asked for
@@ -257,6 +257,7 @@ class Phrasing:
         """
         upper = self._fold(pos + 1)
         tail = 2 if held >= 6 else 1              # units the resolution keeps
+        dur_s = held * unit_s * ARTICULATION
         shake_units = held - tail
         shake_s = shake_units * unit_s
         n = max(2, shake_units * 4)               # four shakes to the unit
@@ -270,7 +271,7 @@ class Phrasing:
                         tail * unit_s * ARTICULATION, velocity))
         return out
 
-    def _ornament(self, pos, start_s, velocity, mood):
+    def _ornament(self, pos, start_s, velocity):
         """Grace notes leaning into the beat, ahead of the structural note.
 
         They borrow from the silence before the note rather than from the note
@@ -382,12 +383,12 @@ class Phrasing:
                     scheduled += self._run_into(prev_pos, pos, start_s,
                                                 unit_s, velocity)
                 if held >= 4 and rng.random() < trill_rate:
-                    scheduled += self._trill(pos, start_s, dur_s, velocity,
+                    scheduled += self._trill(pos, start_s, velocity,
                                              unit_s, held)
                 else:
                     if rng.random() < orn_rate:
-                        scheduled += self._ornament(pos, start_s, velocity,
-                                                    mood)
+                        scheduled += self._ornament(pos, start_s,
+                                                    velocity)
                     scheduled.append(Note(self.notes[pos], start_s, dur_s,
                                           velocity))
                 at += held
