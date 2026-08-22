@@ -352,8 +352,9 @@ output, and both are easy to repeat:
   back as the sample's recorded pitch (`GOSoundProviderWave`), so it silently
   mistunes any auto-tuned pipe built from the file. Fixed to the real note.
 
-Neither changes the audio, so the QA gate still reports **8/13** with the same
-CV and wrap figures — the loop search itself is unaffected.
+Neither changes the audio, so the QA gate read the same **8/13** after these
+fixes as before them — the loop search itself is unaffected. The number moved
+later, and for a different reason: see §4.
 
 ### The organ sounded a constant tone with no MIDI at all
 

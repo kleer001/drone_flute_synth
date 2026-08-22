@@ -3,18 +3,25 @@
 A Linux app, and the measurement tools behind it, that plays an endless
 performance on a **simulated drone flute** — a multi-chambered flute where one
 chamber holds a sustained root while another plays melody on the same breath.
-Sound generation is delegated to **GrandOrgue** playing a purpose-built sample
-set; the app is the player, not the synth.
+**Status: v0 works.** There are two instruments sharing one music engine and
+differing only in what makes the sound.
 
-**Status: v0 works.** The generator produces an `.organ` that loads cleanly in
-GrandOrgue 3.17.3, and the player streams a live, seeded, breath-phrased
-performance to it over ALSA MIDI. All five spikes in SPEC §13 are done — and
-two of them changed the design, including the one the project was built around
-(see [Intonation](#intonation-what-spike-s1-found)).
+- **In the browser** (`./run.sh`) — Python plans the breaths and the page plays
+  the loops with Web Audio. One process, no MIDI, and reverb you can move while
+  it sounds.
+- **Through GrandOrgue** (`./run_old.sh`) — the generator produces an `.organ`
+  that loads cleanly in GrandOrgue 3.17.3 and the player streams to it over
+  ALSA MIDI.
+
+`profile`, `moods`, `melody` and `breath` are shared and know about neither.
+All five spikes in SPEC §13 are done — and two of them changed the design,
+including the one the project was built around (see
+[Intonation](#intonation-what-spike-s1-found)).
 
 | File | What it is |
 |---|---|
 | [`SPEC.md`](SPEC.md) | The build specification — architecture, ODF mapping, breath model, controls, web GUI, acceptance criteria, ordered spikes |
+| `belvedere_drone/browser/` | The browser instrument: plans breaths, serves the page, and the Web Audio graph that sounds them |
 | [`RESEARCH.md`](RESEARCH.md) | What was researched and measured, including the loop-authoring experiment log and what each failed variant taught |
 | `tools/dsp.py` | Shared DSP helpers (sample loading, period-aware envelopes, seeded pitch detection) |
 | `tools/analyze_samples.py` | Inventory a sample folder: format, usable steady state, pitch accuracy vs. nominal |
@@ -33,8 +40,10 @@ sources. Vibrato out of scope for the prototype. Live playback only.
 
 Python 3.11+ (for `tomllib`), with numpy and scipy for the tools and
 mido + python-rtmidi for MIDI output. Everything runs straight from a checkout
-— no package install. You also need GrandOrgue itself; the upstream
-[AppImage](https://github.com/GrandOrgue/grandorgue/releases) needs no root.
+— no package install. The browser instrument needs nothing else. The
+GrandOrgue one additionally needs GrandOrgue itself; the upstream
+[AppImage](https://github.com/GrandOrgue/grandorgue/releases) needs no root,
+and `run_old.sh` fetches it.
 
 ```bash
 git clone https://github.com/kleer001/drone_flute_synth.git
@@ -63,14 +72,21 @@ build script. Thresholds: 60-second render envelope `CV < 0.02` (level pulsing)
 and `wrap < 3.0` (splice discontinuity, as a multiple of the loop's own typical
 sample-to-sample step).
 
-The one-command path — fetches GrandOrgue and the samples if they are missing,
-builds the organ, starts everything and opens the control surface:
+The one-command path — fetches the samples if they are missing, builds the
+loops, serves the page and opens it. The browser makes the sound:
 
 ```bash
-./run.sh                 # or --mood restless, --seed 42, --no-gui, --help
+./run.sh                 # or --mood restless, --seed 42, --port 9000, --help
 ```
 
-Or the same steps by hand:
+The GrandOrgue path is the same idea, plus fetching GrandOrgue, building the
+organ and starting it:
+
+```bash
+./run_old.sh             # or --mood restless, --seed 42, --no-gui, --help
+```
+
+Or the GrandOrgue steps by hand:
 
 ```bash
 python3 -m belvedere_drone.cli odf   profiles/recorder-drone-c.toml build --loops <out_dir>
@@ -123,12 +139,16 @@ record.
 Against VCSL's Baroque Soprano Recorder (13 sustain notes, 48 kHz stereo):
 
 - Steady state 4.5–10.6 s per note; pitch within **±6.2 cents** of nominal.
-- `loopfind.py` + `loop_qa.py`: **8 of 13** notes pass both thresholds. Wrap
-  discontinuity is solved across the board (0.08–4.5, mostly ~1); envelope
-  pulsing is the binding constraint on the 5 failures.
+- `loopfind.py` + `loop_qa.py`: **12 of 13** notes pass both thresholds — CV
+  0.005–0.020, wrap 0.10–1.29. The one failure is C4 on CV, at 0.0203 against a
+  0.02 threshold.
+- Drone pitch, measured through the browser instrument's own audio graph in an
+  `OfflineAudioContext`: within **8 cents** across C4, C3, C2 and C1, and most
+  of that is the recording's own intonation.
 
-See RESEARCH.md for how that number moved from 2/13 to 8/13 and what a
-measurement bug nearly hid.
+See RESEARCH.md for how the loop number moved from 2/13 to 8/13 to 12/13, what
+a measurement bug nearly hid, and why measuring the envelope around the loop
+rather than across it was the step that mattered.
 
 On the app side, `cli.py check` asserts the MIDI-side acceptance criteria:
 determinism from the seed, no repeated consecutive breath, balanced note-on/off

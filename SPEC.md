@@ -406,9 +406,10 @@ wins its metric — but since wrap has headroom and CV does not, flattening goes
 | **crossfade → flatten last** | **8 / 13** |
 | flatten with linearly-detrended gain | 1 / 13 |
 
-Current state of `tools/loopfind.py`: **8/13**, CV 0.004–0.026 (mostly ~0.006),
-wrap 0.08–4.5. The five failures are four marginal wrap misses (3.0–4.5) and one
-CV miss. Reproduce with `tools/loopfind.py` then `tools/loop_qa.py`.
+Current state of `tools/loopfind.py`: **12/13**, CV 0.005–0.020, wrap
+0.10–1.29, since the flattening gain began measuring the envelope around the
+loop rather than across it (RESEARCH.md §4). The one failure is C4 on CV, at
+0.0203. Reproduce with `tools/loopfind.py` then `tools/loop_qa.py`.
 
 Three bugs found en route, recorded in RESEARCH.md because they are easy to
 repeat: an envelope window shorter than the pitch period flattens the waveform
@@ -886,8 +887,8 @@ dependency, and §10.5 gets that to zero.
 |---|---|---|
 | 1 | A 10-minute continuous run produces no stuck notes and no MIDI buffer growth. | **Pass** — `cli.py check` runs 60 breaths and asserts note-ons balance note-offs and nothing is left sounding. |
 | 2 | Killing the app (SIGINT and SIGKILL-then-restart) leaves no sounding drone. | **Partial** — the panic path (CC 123 + CC 120, signal handler, `atexit`) is asserted by `check`. SIGKILL cannot be caught by anything; recovery there depends on GrandOrgue, and is untested. |
-| 3 | Every generated loop passes `tools/loop_qa.py`: 60 s render envelope **CV < 0.02** and wrap discontinuity **< 3.0**. | **8/13** — unchanged; the S5 fixes moved metadata, not audio. The shipped profile uses one failing loop (F#5, wrap 4.5). |
-| 4 | Measured output pitch of each pipe matches the profile's cents table within **±3 cents** (record GrandOrgue's output, run `dsp.detect_f0` seeded from the nominal note). | **Not verified.** Needs GrandOrgue's audio output recorded, which needs a real audio device — it cannot be done from a headless session. |
+| 3 | Every generated loop passes `tools/loop_qa.py`: 60 s render envelope **CV < 0.02** and wrap discontinuity **< 3.0**. | **12/13** — CV 0.005–0.020, wrap 0.10–1.29. The one failure is C4 on CV (0.0203); the drone chamber uses it knowingly, the melody does not. |
+| 4 | Measured output pitch of each pipe matches the profile's cents table within **±3 cents**. | **Measured on the browser instrument, within 8 cents.** Its audio graph is the page's, so each voice renders in an `OfflineAudioContext` and is measured by autocorrelation with no device involved — drone C4/C3/C2/C1 at +4.1/+3.8/+8.0/+4.5 cents. Most of that is the recording's own intonation: the raw VCSL C4 is itself 3.2 cents sharp, which is why ±3 was never reachable against these samples. Still unverified through GrandOrgue, which needs a real device. |
 | 5 | Two runs with the same seed **and no submissions** produce byte-identical MIDI streams; a run with submissions reproduces byte-identically from seed + session log (§10.9). | **Pass** for the no-submission half — and a different seed is asserted to differ. The submission half is **not met**: the engine writes the session log on every applied set, but nothing reads it back, so a run with submissions has no replay path. |
 | 6 | No two consecutive breaths are identical in note sequence. | **Pass** over 60 breaths. |
 
