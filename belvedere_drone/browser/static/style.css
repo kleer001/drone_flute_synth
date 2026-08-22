@@ -1,0 +1,70 @@
+/* Same grammar as the organ player's page: neutral chrome, colour for state
+   only -- green means sounding. */
+:root {
+  --ink: #1a1a1a; --paper: #f4f3f1; --panel: #fff; --rule: #dcd9d4;
+  --muted: #736e68; --track: #cfcbc4; --live: #2e7d32;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0 auto; padding: 0 0 1rem; max-width: 46rem;
+  background: var(--paper); color: var(--ink);
+  font: 13px/1.4 "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+button, input, select, output { font: inherit; color: inherit; }
+
+.transport {
+  display: flex; align-items: center; gap: .5rem; padding: .35rem .5rem;
+  background: var(--panel); border-bottom: 1px solid var(--rule);
+  position: sticky; top: 0; z-index: 2;
+}
+.transport .run {
+  width: 2rem; height: 1.6rem; line-height: 1; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: 3px; background: var(--paper);
+}
+.transport .run:hover { border-color: var(--ink); }
+.lamp { width: .5rem; height: .5rem; border-radius: 50%; background: var(--track); flex: none; }
+.lamp.on { background: var(--live); }
+.meta { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.meta.grow { overflow: hidden; text-overflow: ellipsis; }
+
+main { padding: 0 .5rem; }
+h1 { font-size: 1.1rem; font-weight: 600; margin: .8rem 0 .2rem; }
+.section { margin: 1rem 0 .3rem; font-weight: 600; }
+.hint { font-weight: 400; color: var(--muted); }
+
+.rows { background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; }
+.param {
+  display: grid; grid-template-columns: 7rem 1fr 4.2rem;
+  align-items: center; gap: .5rem; padding: .18rem .5rem; min-height: 1.6rem;
+}
+.param + .param { border-top: 1px solid var(--rule); }
+.param label { color: var(--muted); }
+.param output { text-align: right; font-variant-numeric: tabular-nums; }
+select, input[type=text] {
+  height: 1.5rem; background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 3px;
+}
+.link { background: none; border: 0; color: var(--muted); cursor: pointer; }
+
+input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  height: .9rem; width: 100%; background: none; cursor: pointer;
+}
+input[type=range]::-webkit-slider-runnable-track { height: 3px; background: var(--track); border-radius: 2px; }
+input[type=range]::-moz-range-track { height: 3px; background: var(--track); border-radius: 2px; }
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: .7rem; height: .7rem;
+  margin-top: -.2rem; border-radius: 50%; background: var(--ink);
+}
+input[type=range]::-moz-range-thumb {
+  width: .7rem; height: .7rem; border: 0; border-radius: 50%; background: var(--ink);
+}
+
+.note { color: var(--muted); min-height: 1.1em; margin: .5rem 0 .2rem; }
+pre {
+  margin: 0; padding: .4rem .5rem; background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 4px;
+  color: var(--muted); font-size: 11px; line-height: 1.45;
+  overflow-x: auto; white-space: pre;
+}
+footer { padding: .6rem .5rem; color: var(--muted); font-size: 11px; }

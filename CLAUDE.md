@@ -30,9 +30,19 @@ install, no cross-repo dependency. Scripts run directly from a checkout.
 
 ## Running
 
-`./run.sh` is the entry point: it fetches what is missing, builds the organ,
-starts GrandOrgue, serves the GUI on the first free port at or above 8737, and
-plays. The steps below are the same thing done by hand.
+There are two instruments, sharing one music engine and differing only in what
+makes the sound.
+
+`./run.sh` is the browser one: Python plans the breaths and the page plays the
+same loops with Web Audio. No GrandOrgue, no MIDI, no ODF, one process. Reverb,
+tone and level are ours and move while it sounds. `belvedere_drone/browser/`
+holds it.
+
+`./run_old.sh` is the GrandOrgue one: it fetches what is missing, builds the
+organ, starts GrandOrgue, serves the submit-gated GUI on the first free port at
+or above 8737, and plays over ALSA MIDI. The steps below are that, done by hand.
+
+`profile`, `moods`, `melody` and `breath` are shared and know about neither.
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
