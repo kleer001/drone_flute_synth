@@ -2,7 +2,7 @@
 """Inventory a folder of sustain samples: format, usable steady state, and
 pitch accuracy against the nominal note in each filename.
 
-This produced the measured VCSL table in SPEC.md section 6.
+This produced the measured VCSL sample-set table.
 
     python3 tools/analyze_samples.py <dir> [--concert-a 440]
 """

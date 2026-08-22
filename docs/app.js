@@ -1,6 +1,6 @@
-"use strict";
-/* The browser is the instrument here. Python plans a breath and hands it over;
-   this schedules it on the audio clock.
+/* The browser is the whole instrument: it plans the music and it makes the
+   sound. Nothing is fetched but the loops themselves, so this runs from any
+   static host.
 
    Everything is scheduled ahead of time against `AudioContext.currentTime`,
    never against a timer. setInterval drifts and stalls when the tab is busy;
@@ -11,22 +11,31 @@
 const LOOKAHEAD_S = 4.0;      // keep this much music scheduled ahead
 const TICK_MS = 250;
 
+import { Instrument } from "./engine/instrument.js";
+import { readLoopPoints } from "./engine/samples.js";
+import { INSTRUMENT } from "./engine/profile.js";
+import { CHOICE_PARAMS } from "./engine/moods.js";
+
 let ctx = null;
-let inst = null;              // what /instrument said
-let buffers = {};             // file name -> AudioBuffer
+let engine = null;            // the performance itself
+let inst = null;              // what engine.describe() said
+let loops = {};               // file name -> {buffer, loopStartS, loopEndS}
 let running = false;
 let cursor = 0;               // audio-clock time the next breath begins
-let live = [];                // sources still sounding, for a clean stop
+let live = new Set();         // sources still sounding, for a clean stop
 let history = [];
 let working = {};             // what the performance tab shows
 let applyAt = null;           // audio-clock time a submitted set starts sounding
 
-// The VCSL sustains are quiet -- they peak between 0.02 and 0.13, and the C4
-// the drone uses is the quietest of them. Played back at their own level the
-// instrument is barely audible, so the mix gets a fixed makeup stage and a
-// limiter behind it to catch the moments several notes and a long reverb tail
-// land together.
-const MAKEUP = 6.0;
+// How quiet the recordings are is a fact about the sample set, so the figure
+// lives with them; the limiter behind this stage catches the moments several
+// notes and a long reverb tail land together.
+const MAKEUP = INSTRUMENT.makeupGain;
+
+// Loudness curve: the engine emits a 0-127 velocity, and this is the one place
+// that becomes a gain. Written once so the drone and the lead keep the balance
+// `voice_gain` encodes.
+const ampFor = (velocity, gain) => Math.pow(velocity / 127, 1.4) * gain;
 
 // the graph, built once
 let master = null, dryGain = null, wetGain = null, convolver = null,
@@ -56,19 +65,18 @@ const ROOMS = {
   "cathedral": {wet: 0.52, decay: 6.5, predelay: 55, tone: 8000},
   "canyon":    {wet: 0.62, decay: 8.0, predelay: 110, tone: 6000},
 };
-const ROOM_FIELDS = ["wet", "decay", "predelay", "tone"];
+const ROOM_FIELDS = Object.keys(ROOMS.dry);
 
 const $ = (id) => document.getElementById(id);
 
 /* ---------- transport ---------- */
 
-async function api(path, body) {
-  const opts = body === undefined
-    ? {} : {method: "POST", headers: {"Content-Type": "application/json"},
-            body: JSON.stringify(body)};
-  const res = await fetch(path, opts);
-  if (!res.ok) throw new Error(`${path}: ${res.status}`);
-  return res.json();
+/* The loops are the only thing still fetched. Relative, so the page works from
+   a project subpath as well as from a domain root. */
+async function loadManifest() {
+  const res = await fetch("loops/manifest.json");
+  if (!res.ok) throw new Error(`loops/manifest.json: ${res.status}`);
+  return (await res.json()).files;
 }
 
 /* ---------- the audio graph ----------
@@ -135,34 +143,37 @@ function setWet(v) {
 /* ---------- loading ---------- */
 
 async function loadBuffers() {
-  const names = Object.keys(inst.loops);
-  const got = await Promise.all(names.map(async (name) => {
-    // A#4_loop.wav and friends: an unescaped # is a fragment, so the
-    // request would arrive as /loops/A.
-    const res = await fetch(`/loops/${encodeURIComponent(name)}`);
+  const names = engine.loopFiles();
+  await Promise.all(names.map(async (name) => {
+    // A#4_loop.wav and friends: an unescaped # is a fragment, so the request
+    // would arrive as loops/A.
+    const res = await fetch(`loops/${encodeURIComponent(name)}`);
     if (!res.ok) throw new Error(`${name}: ${res.status}`);
-    return ctx.decodeAudioData(await res.arrayBuffer());
+    const raw = await res.arrayBuffer();
+    // Read the loop points BEFORE decoding: decodeAudioData detaches the
+    // buffer, and it discards the smpl chunk they live in either way.
+    const points = readLoopPoints(raw);
+    loops[name] = { ...points, buffer: await ctx.decodeAudioData(raw) };
   }));
-  names.forEach((n, i) => { buffers[n] = got[i]; });
 }
 
 /* ---------- playing one note ---------- */
 
 /* Every voice is the same thing: a loop from the sample set, at the pitch the
-   profile asks for. loopStart/loopEnd are the smpl chunk's own points and
-   detune is the cents table's own value, so neither is converted here. */
+   engine asks for. loopStart/loopEnd are the smpl chunk's own points in
+   seconds, and detune is in cents, so neither is converted here. */
 function source(spec, at, until) {
-  const loop = inst.loops[spec.file];
+  const loop = loops[spec.file];
   const src = ctx.createBufferSource();
-  src.buffer = buffers[spec.file];
+  src.buffer = loop.buffer;
   src.loop = true;
-  src.loopStart = loop.loop_start_s;
-  src.loopEnd = loop.loop_end_s;
+  src.loopStart = loop.loopStartS;
+  src.loopEnd = loop.loopEndS;
   src.detune.value = spec.cents;
   src.start(at);
   src.stop(until);
-  live.push(src);
-  src.onended = () => { live = live.filter((s) => s !== src); };
+  live.add(src);
+  src.onended = () => live.delete(src);
   return src;
 }
 
@@ -170,7 +181,7 @@ function source(spec, at, until) {
    stops without a click inside the breath the caller is shaping. */
 function voice(spec, at, dur, velocity, dest) {
   const g = ctx.createGain();
-  const amp = Math.pow(velocity / 127, 1.4) * inst.chamber_gain.melody;
+  const amp = ampFor(velocity, inst.voice_gain.lead);
   const a = Math.min(0.012, dur / 3), r = Math.min(0.06, dur / 3);
   g.gain.setValueAtTime(0, at);
   g.gain.linearRampToValueAtTime(amp, at + a);
@@ -193,17 +204,24 @@ function scheduleBreath(b) {
   env.gain.exponentialRampToValueAtTime(0.0001, t0 + b.length_s);
   env.connect(tone);
 
-  const drone = ctx.createGain();
-  drone.gain.value = Math.pow(b.drone_velocity / 127, 1.4)
-                     * inst.chamber_gain.drone;
-  source(inst.voices.drone[b.drone], t0, t0 + b.length_s + 0.05)
-    .connect(drone).connect(env);
+  // Up to three drones share one gain stage, scaled by 1/sqrt(n): three voices
+  // at full level would be three times the drone the settings ask for, and the
+  // limiter would spend the whole breath pulling it back down.
+  if (b.drones.length) {
+    const drone = ctx.createGain();
+    drone.gain.value = ampFor(b.drone_velocity, inst.voice_gain.drone)
+                       / Math.sqrt(b.drones.length);
+    drone.connect(env);
+    for (const name of b.drones) {
+      source(inst.voices[name], t0, t0 + b.length_s + 0.05).connect(drone);
+    }
+  }
 
   for (const n of b.notes) {
     const at = t0 + n.start_s;
     const dur = Math.min(n.dur_s, b.length_s - n.start_s);
     if (dur <= 0.005) continue;
-    voice(inst.voices.melody[n.name], at, dur, n.velocity, env);
+    voice(inst.voices[n.name], at, dur, n.velocity, env);
   }
 
   cursor = t0 + b.length_s + b.inhale_s;
@@ -218,10 +236,10 @@ async function fill() {
   filling = true;
   try {
     while (running && cursor < ctx.currentTime + LOOKAHEAD_S) {
-      scheduleBreath(await api("/breath"));
+      scheduleBreath(engine.nextBreath());
     }
   } catch (err) {
-    note(`lost the server: ${err.message}`);
+    note(`stopped: ${err.message}`);
     stop();
   } finally {
     filling = false;
@@ -254,7 +272,15 @@ async function start() {
     // one is built here rather than at load.
     ctx = new AudioContext();
     note("loading loops…");
-    inst = await api("/instrument");
+    const files = await loadManifest();
+    const url = new URLSearchParams(location.search);
+    engine = new Instrument(files, {
+      mood: url.get("mood") || "contemplative",
+      key: url.get("key") || "C",
+      mode: url.get("mode") || "minor",
+      seed: Number(url.get("seed")) || Math.floor(Math.random() * 2 ** 31),
+    });
+    inst = engine.describe();
     await loadBuffers();
     buildGraph();
     describe();
@@ -271,14 +297,14 @@ async function start() {
 function stop() {
   running = false;
   for (const s of live) { try { s.stop(); } catch (e) { /* already done */ } }
-  live = [];
+  live.clear();
   $("run").textContent = "▶";
   $("lamp").classList.remove("on");
   $("now").textContent = "";
 }
 
-/* One row of the performance panel. Display follows the drag; the engine is
-   told on release, so a slider does not post thirty times on the way. */
+/* One row of the performance panel. Dragging writes the working copy and
+   redraws; nothing reaches the engine until Submit. */
 function paramRow(name) {
   const [lo, hi] = inst.ranges[name];
   const row = document.createElement("div");
@@ -301,23 +327,61 @@ function paramRow(name) {
   return row;
 }
 
+/* One drone slot. The interval is in semitones from the tonic, so +7 is a fifth
+   in every scale and a slot can sit deliberately outside the one being played. */
+const INTERVALS = ["root", "m2", "M2", "m3", "M3", "4th", "TT", "5th",
+                   "m6", "M6", "m7", "M7", "8ve"];
+
+/* Short enough to fit the value column without wrapping. Inside an octave the
+   interval has a name worth reading; beyond one, the semitone count is the
+   clearer thing to show. */
+function intervalName(semitones) {
+  if (semitones === 0) return "root";
+  const sign = semitones < 0 ? "\u2212" : "+";
+  const n = Math.abs(semitones);
+  return n <= 12 ? sign + INTERVALS[n] : `${sign}${n} st`;
+}
+
+function droneRow(i) {
+  const [lo, hi] = inst.drone_semitones;
+  const row = document.createElement("div");
+  row.className = "param";
+  row.dataset.drone = i;
+  row.innerHTML =
+    `<label><input type="checkbox" class="on"> drone ${i + 1}</label>` +
+    `<input type="range" min="${lo}" max="${hi}" step="1">` +
+    `<output></output>`;
+  const box = row.querySelector(".on"), slider = row.querySelector("[type=range]");
+  box.addEventListener("change", () => {
+    working.drones[i].on = box.checked; renderParams();
+  });
+  slider.addEventListener("input", () => {
+    working.drones[i].semitones = parseInt(slider.value, 10); renderParams();
+  });
+  return row;
+}
+
 let built = false;
 function describe() {
   document.title = inst.profile;
   $("title").textContent = inst.profile;
   $("prov").textContent = inst.provenance;
+  $("prov").title = inst.sampleNote;      // the long form, on hover
 
   if (!built) {
     const m = $("mood");
     for (const name of inst.moods) m.appendChild(new Option(name, name));
-    const r = $("root");
-    for (const n of inst.drone_notes) r.appendChild(new Option(n, n));
+    for (const k of inst.keys) $("key").appendChild(new Option(k, k));
+    for (const k of inst.modes) $("mode").appendChild(new Option(k, k));
+    for (let i = 0; i < inst.drone_slots; i++) {
+      $("drones").appendChild(droneRow(i));
+    }
     for (const name of inst.mood_weights) $("weights").appendChild(paramRow(name));
     for (const name of inst.breath_fields) $("breath").appendChild(paramRow(name));
     built = true;
   }
 
-  working = Object.assign({}, inst.params);
+  working = structuredClone(inst.params);
   renderParams();
   $("meter").textContent =
     `${inst.meter.bpm} bpm · ${inst.meter.beats_per_measure}/4 · ` +
@@ -326,6 +390,9 @@ function describe() {
 
 function isDirty(name) {
   const a = working[name], b = inst.params[name];
+  // `drones` is a list of slots, so a shallow compare would call it clean
+  // whenever a slot changed. Compare what it renders to instead.
+  if (name === "drones") return JSON.stringify(a) !== JSON.stringify(b);
   return typeof b === "number"
     ? Math.abs(parseFloat(a) - b) > 1e-9 : String(a) !== String(b);
 }
@@ -333,11 +400,24 @@ function isDirty(name) {
 const anyDirty = () =>
   inst !== null && Object.keys(inst.params).some(isDirty);
 
-/* The working copy on screen, and whether it differs from what is sounding. */
+/* The working copy on screen, and whether it differs from what is sounding.
+   Runs on every slider event, so each dirty flag is computed once rather than
+   once per row -- `isDirty("drones")` serialises the slot list to compare it. */
 function renderParams() {
   $("mood").value = working.mood;
-  $("root").value = working.root;
+  $("key").value = working.key;
+  $("mode").value = working.mode;
   if (document.activeElement !== $("seed")) $("seed").value = working.seed;
+  const dronesDirty = isDirty("drones");
+  for (const row of document.querySelectorAll("[data-drone]")) {
+    const slot = working.drones[row.dataset.drone];
+    const box = row.querySelector(".on"), slider = row.querySelector("[type=range]");
+    box.checked = slot.on;
+    if (document.activeElement !== slider) slider.value = slot.semitones;
+    row.querySelector("output").textContent = intervalName(slot.semitones);
+    row.classList.toggle("off", !slot.on);
+    row.classList.toggle("edited", dronesDirty);
+  }
   for (const row of document.querySelectorAll("[data-field]")) {
     const name = row.dataset.field;
     const input = row.querySelector("input");
@@ -346,22 +426,22 @@ function renderParams() {
       Number(working[name]).toFixed(DECIMALS[name] ?? 2);
     row.classList.toggle("edited", isDirty(name));
   }
-  for (const name of ["mood", "root", "seed"]) {
+  for (const name of CHOICE_PARAMS) {
     $(name).closest(".param").classList.toggle("edited", isDirty(name));
   }
   const dirty = anyDirty();
   $("submit").disabled = !dirty;
   $("revert").disabled = !dirty;
-  renderStatus();
+  renderStatus(dirty);
 }
 
 /* The page owns the schedule, so it knows exactly when a submitted set starts
    sounding: at the end of what is already scheduled. */
-function renderStatus() {
+function renderStatus(dirty = anyDirty()) {
   const el = $("status");
   if (applyAt === null) {
     el.className = "status";
-    el.textContent = anyDirty() ? "Unsubmitted changes." : "";
+    el.textContent = dirty ? "Unsubmitted changes." : "";
     return;
   }
   const left = applyAt - (ctx ? ctx.currentTime : 0);
@@ -371,15 +451,15 @@ function renderStatus() {
   el.textContent = `Applies in ${Math.ceil(left)} s`;
 }
 
-/* Anything that shapes the music goes back to Python; the change lands on the
-   next breath the page asks for, so the ones already scheduled play out. That
-   is the same "applies on a breath boundary" the organ player has, without
-   its submit gate -- this one is a toy and answers immediately. */
-async function submit() {
+/* The whole working set is applied at once, so a performance never runs
+   half-changed -- a key from the new set under a phrase drawn for the old one.
+   It lands on the next breath the page asks for, which is why the breaths
+   already scheduled play out first. */
+function submit() {
   if (!inst || !anyDirty()) return;
-  const pending = Object.assign({}, working);
+  const pending = structuredClone(working);
   try {
-    inst = await api("/performance", pending);
+    inst = engine.update(pending);
   } catch (err) {
     note(`refused: ${err.message}`);
     return;
@@ -387,14 +467,14 @@ async function submit() {
   // Breaths already scheduled play out first, so the set starts sounding
   // where the schedule currently ends.
   applyAt = running ? cursor : null;
+  // `update` returned the new description, so `describe` resets the working
+  // copy from it -- it already equals `pending`.
   describe();
-  working = pending;
-  renderParams();
   note("");
 }
 
 function revert() {
-  working = Object.assign({}, inst.params);
+  working = structuredClone(inst.params);
   renderParams();
   note("");
 }
@@ -409,8 +489,11 @@ $("mood").addEventListener("change", () => {
   Object.assign(working, {mood: name}, inst.preset_weights[name] || {});
   renderParams();
 });
-$("root").addEventListener("change", () => {
-  working.root = $("root").value; renderParams();
+$("key").addEventListener("change", () => {
+  working.key = $("key").value; renderParams();
+});
+$("mode").addEventListener("change", () => {
+  working.mode = $("mode").value; renderParams();
 });
 $("seed").addEventListener("input", () => {
   working.seed = parseInt($("seed").value, 10) || 0; renderParams();
@@ -435,6 +518,7 @@ for (const tab of document.querySelectorAll(".tab")) {
 }
 
 // Audio controls are ours and need no round trip, so they move while it sounds.
+const setRoom = {};       // id -> set the slider and apply it, without a gesture
 const bind = (id, fn, fmt, onRelease = false) => {
   const el = $(id), out = $(`${id}-out`);
   const show = () => { out.textContent = fmt(parseFloat(el.value)); };
@@ -442,6 +526,7 @@ const bind = (id, fn, fmt, onRelease = false) => {
   el.addEventListener("input", onRelease ? show : () => { show(); apply(); });
   if (onRelease) el.addEventListener("change", apply);
   show();
+  setRoom[id] = (v) => { el.value = v; show(); apply(); };
 };
 bind("master",
      (v) => master.gain.setTargetAtTime(v * MAKEUP, ctx.currentTime, 0.02),
@@ -462,11 +547,7 @@ const roomSel = $("preset");
 for (const name of Object.keys(ROOMS)) roomSel.appendChild(new Option(name, name));
 function applyRoom() {
   const room = ROOMS[roomSel.value];
-  for (const f of ROOM_FIELDS) {
-    $(f).value = room[f];
-    $(f).dispatchEvent(new Event("input"));
-    $(f).dispatchEvent(new Event("change"));
-  }
+  for (const f of ROOM_FIELDS) setRoom[f](room[f]);
 }
 roomSel.addEventListener("change", applyRoom);
 // Through the same path as any other choice, so ROOMS is the only place a
@@ -476,4 +557,6 @@ roomSel.value = "chapel";
 applyRoom();
 
 setInterval(fill, TICK_MS);
-setInterval(renderStatus, 250);
+// Only the countdown moves on its own; dirty state changes go through
+// renderParams, which redraws the line itself.
+setInterval(() => { if (applyAt !== null) renderStatus(); }, 250);

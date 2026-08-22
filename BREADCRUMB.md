@@ -2,59 +2,82 @@ fresh
 
 ## Summary
 
-There are now **two instruments** sharing one music engine, differing only in
-what makes the sound. `./run.sh` is the browser one (Python plans breaths, the
-page plays the loops with Web Audio); `./run_old.sh` is the GrandOrgue one,
-unchanged and still passing its gates. `profile`, `moods`, `melody` and
-`breath` are shared and know about neither.
+**The instrument is a static site in `docs/`** — engine included — meant for
+GitHub Pages at https://kleer001.github.io/drone_flute_synth/ (source: `main`,
+`/docs`). No Python at runtime; `tools/` is a build step only. `./run.sh` just
+serves `docs/`.
 
-This session: gave the instrument a **meter** (breaths resolve to bar lines,
-notes are conventional values, tempo is a mood weight with a GUI slider); took
-the loop gate from **8/13 to 12/13** by measuring the loop's envelope around it
-rather than across it; widened the melody to eleven pitches; built the browser
-instrument with live reverb, room presets and a submit-gated performance tab;
-and measured **criterion 4** for the first time.
+**Key and scale are now controls.** Twelve keys x twelve scales, plus three
+optional drone slots each holding a semitone offset from the tonic. The fixed
+per-profile note list, the just-intonation cents table, chambers, holes and
+hand-authored pitch-fill are all gone: pitch is `scales.pitches` for what to
+play and `SampleSet.voiceFor` for which recording plays it. Worst shift across
+all 144 key/scale combinations is 100 cents, asserted by `check.mjs`.
 
-All previous breadcrumb todos are done. What remains is housekeeping and a few
-deferred judgment calls. Working tree clean, **15 commits ahead of
-origin/main**, nothing pushed.
+The engine was **ported from Python to JavaScript** and the Python one
+retired, so there is still exactly one engine. The port is faithful: over
+2400 breaths per mood the two agree on notes-per-breath, breath length, grace
+count, register span, layer mix and call/answer ratio to within a few percent.
+It is not bit-identical and cannot be — the PRNG differs — so old Python seeds
+do not carry over.
+
+`SPEC.md` and `RESEARCH.md` are deleted, along with every GrandOrgue trace
+(2.1 GB of AppImage and sandbox homes included).
+
+A `/simplify` pass then ran over the port. The two findings that mattered:
+`check.mjs` was scanning `docs/loops/` while the page reads `manifest.json`, so
+the gate was blind to exactly the drift the manifest exists to prevent; and
+`loopfind.py` tiled each loop 3x with `loopEnd` at 2/3, so a third of every
+shipped file was fetched and decoded unheard. Both fixed — payload 4.9 -> 3.3 MB,
+and the gate now fails on a stale manifest (verified by staling one).
 
 ## Todos
 
 ### Parallel
-- [ ] #1 Clear `tmp/` — it is 1.7 GB. 1.4 GB is two GrandOrgue sandbox homes
-      (`tmp/gohome2`, `tmp/gohome_cmb`) holding regenerable sample caches from
-      the `.cmb` and reverb probes; 19 MB is `tmp/df`, Dragonfly `.deb`s
-      downloaded to inspect and never installed. All scratch, all gitignored.
-      Keep `tmp/toy_*.py` unless #2 moves them.
-- [ ] #2 Promote `tmp/toy_pitch.py` into `tools/`. It is the **only**
-      criterion-4 gate that exists and it sits in scratch, where every other
-      gate has a home in `tools/`. It renders each drone voice in an
-      `OfflineAudioContext` and autocorrelates — needs a running browser
-      server and playwright. `tmp/toy_gate.py` and `tmp/toy_audio.py` are the
-      UI/audio harnesses and could go with it.
-- [ ] #3 `requirements.txt` pulls `mido` and `python-rtmidi` for a browser path
-      that imports neither, and `run.sh` installs all four. Split the
-      requirements, or have `run.sh` install only numpy and scipy.
-- [ ] #4 Push the 15 commits to `origin/main` — deliberately held, awaiting the
-      go-ahead.
-- [ ] #5 Decide the **profile note-naming octave**. Every VCSL sample sounds
-      exactly one octave above its filename (measured, ratio 2.000–2.004 across
-      all 13) — the soprano recorder convention, named by fingering. So the
-      profile's note names describe fingering, not pitch, and nothing in the
-      docs says so. Either document it in the profile, or rename to sounding
-      pitch (drone C5, melody C6–C7), which rewrites the ODF key mapping and
-      needs GrandOrgue re-verified. Called "fine" for now; it will trip a cold
-      reader.
+- [ ] #1 Clear `tmp/`. 19 MB is `tmp/df`, Dragonfly `.deb`s downloaded to
+      inspect and never installed; the rest is 60-second `.wav` renders and
+      scratch. All gitignored. Keep `tmp/toy_*.py` unless #2 moves them.
+- [ ] #2 Promote the drone-pitch measurement into a real gate. It currently
+      lives as an ad-hoc `OfflineAudioContext` render driven through
+      playwright; `check.mjs` covers the engine but nothing automated covers
+      output pitch. `tmp/toy_pitch.py` is the older Python sketch of it.
+- [ ] #4 Push, then enable GitHub Pages (Settings -> Pages -> main, /docs).
+      The README already links to the Pages URL, so the link is dead until
+      both are done.
+- [ ] #5 Consider a **drone level per slot**. Three drones share one gain
+      stage scaled by 1/sqrt(n), which keeps the total sane but means a fifth
+      cannot be tucked under a root. Only worth it if it sounds wanted.
+- [ ] #6 Two `/simplify` findings were deliberately skipped and are still open.
+      `describe()` re-exports twelve module constants across what used to be an
+      HTTP boundary — app.js could import them directly and the snake_case
+      naming would go with it. And the breath envelope is split: the engine
+      owns attack/release times, the page owns the curve shape. Both are
+      restructures rather than cleanups.
 
 ### Sequential
 _(none)_
 
 ## Context
 
-**Two runners.** `./run.sh` → `belvedere_drone.browser.server`, serves on the
-first free port at or above 8740, browser makes the sound. `./run_old.sh` →
-GrandOrgue, ALSA MIDI, port 8737. Both fetch VCSL and build loops if missing.
+**The runner.** `./run.sh` serves `docs/` on the first free port at or above
+8740 via `http.server`. It only builds loops when `docs/loops` is empty or you
+pass `--rebuild`. Key/scale/mood/seed are page controls and URL params
+(`?key=A&mode=phrygian`), not CLI flags.
+
+**The loops are committed** (13 files, 3.3 MB, `docs/loops/`), which reverses
+the old "sample audio is never committed" rule — a static player has to ship
+its audio. They are CC0-derived. `docs/loops/manifest.json` lists them because
+a browser cannot list a directory; `tools/manifest.py` regenerates it and
+`check.mjs` fails if it disagrees with the directory.
+
+Each file holds the loop **twice**, loop points on the second copy. The first
+is pre-roll — the note's entry, and what a crossfading reader needs before
+`loopStart`. Nothing reads past `loopEnd`, which is why there is no third copy.
+
+**Note names are sounding pitch.** The loop files are fingering-named and a
+soprano recorder sounds an octave above that; `sounding_offset = 12` in the
+profile is the only place that distinction lives. Measured: no energy at the
+named frequency, all of it at twice.
 
 **The meter.** Profile `[meter]` carries `beats_per_measure` (the bar belongs
 to the instrument); `bpm` is a **mood weight** (tempo belongs to the piece) —
@@ -68,40 +91,34 @@ eighth-note positions, durations conventional values via `melody.fit_value`.
 around itself. Measured open, the envelope's ends disagree by up to 0.82 in log
 gain and that lands as a step on the seam. The alternative — removing the
 endpoint ramp in the log domain — fixes wrap and destroys CV (0/13), because
-the ramp it removes *is* the breath trend. RESEARCH.md §4 has both tables.
+the ramp it removes *is* the breath trend. Measured over all thirteen:
+envelope open 8/13, endpoint ramp removed 0/13, envelope circular **12/13**.
 
-**GrandOrgue limits, measured against 3.17.3.** `PitchTuning` is bounded at
-**±1800 cents** (−1800 loads, −1801 rejected), which is why the profile's drone
-stops at C3 and why C2 needs the browser. The MIDI binding persists on its own
-in `~/Documents/GrandOrgue/Data/<HASH>-0.cmb` (gzipped text, written on clean
-exit) — **not** in `Settings/`, which stays empty; but when the ODF changes
-shape GrandOrgue prompts before reusing it and waits for a human "Yes".
+**The audio side.** `AudioBufferSourceNode` takes `loopStart`/`loopEnd` in
+seconds (straight from the `smpl` chunk) and `detune` in cents (straight from
+`SampleSet.voiceFor`) — nothing is converted anywhere. Loop points must be read
+from the bytes *before* `decodeAudioData`, which discards the chunk and detaches
+the buffer; a buffer that lost them plays once and stops rather than erroring.
+The performance panel is submit-gated with an exact countdown (the page owns the
+schedule, so it knows when the scheduled music runs out); the room panel is live.
+`INSTRUMENT.makeupGain = 6.0` because VCSL peaks at 0.02–0.13 — a fact about the
+recordings, so it lives with them and not in the graph.
 
-**Browser instrument.** `AudioBufferSourceNode` takes `loopStart`/`loopEnd`
-(the `smpl` chunk) and `detune` **in cents** (the profile's cents table) — no
-conversion, no ±1800 wall, so the drone offers C4/C3/C2/C1 via
-`extend_drone()`, which mutates only this server's copy of the Profile.
-`DRONE_FLOOR_OCTAVE` names the floor absolutely; an earlier relative count
-silently reached C1 when the profile gained C3. Performance tab is
-submit-gated with an exact countdown (the page owns the schedule); the room tab
-is live and never reaches Python. `MAKEUP = 6.0` because VCSL peaks at
-0.02–0.13.
-
-**Verification.** Three gates: `tools/loop_qa.py` (12/13), `cli.py check` (six
-MIDI criteria, both profiles), and the browser pitch measurement (criterion 4,
-worst 8 cents). ±3 cents was never reachable against these samples — the raw
-VCSL C4 is itself +3.2¢ sharp.
+**Verification.** Two gates plus a manual measurement: `tools/loop_qa.py`
+(12/13) for the samples, `node check.mjs` for the engine (determinism, no
+repeated breath, 144-combination coverage, validation, manifest freshness), and
+an `OfflineAudioContext` render driven through playwright for output pitch —
+three drones in A at 440.37 / 657.53 / 220.18 Hz. That last one is still ad-hoc;
+see todo #2. ±3 cents was never reachable against these samples — the raw VCSL
+C is itself +3.2¢ sharp.
 
 **Known gaps in the browser toy, deliberate:** no clash banner if two tabs
 edit; room settings do not persist across reload; `makeImpulse` uses
 `Math.random()` so the reverb tail differs per load even at the same seed.
 
-**/simplify findings skipped, with reasons:** shared HTTP base handler and
-shared `params.js`/CSS tokens across both pages (edits `web/`, which backs the
-verified organ GUI); the deep `extend_drone` fix — declare the full drone range
-in the profile and have `odfgen` refuse what `PitchTuning` cannot express,
-which is the right altitude but changes the shared profile and needs GrandOrgue
-re-verified.
+**/simplify findings skipped, with reasons:** a shared HTTP base handler and
+shared CSS tokens, both of which were cross-page factorings when there were two
+pages.
 
 ## Next Step
 

@@ -1,5 +1,4 @@
-/* Same grammar as the organ player's page: neutral chrome, colour for state
-   only -- green means sounding. */
+/* Neutral chrome, colour reserved for state only -- green means sounding. */
 :root {
   --ink: #1a1a1a; --paper: #f4f3f1; --panel: #fff; --rule: #dcd9d4;
   --muted: #736e68; --track: #cfcbc4; --live: #2e7d32;
@@ -80,6 +79,17 @@ footer { padding: .6rem .5rem; color: var(--muted); font-size: 11px; }
 .tab.on { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
 p.hint { margin: .4rem 0 0; color: var(--muted); font-size: 11px; }
 .param.edited label { color: #b26a00; }
+
+/* ---- drone slots ---- */
+/* The checkbox rides inside the label so the whole word is a hit target, and
+   a slot that is off dims its interval rather than hiding it -- the setting is
+   still there, it just is not sounding. */
+.param[data-drone] label {
+  display: flex; align-items: center; gap: .4rem; cursor: pointer;
+}
+.param[data-drone] label input { margin: 0; cursor: pointer; }
+.param[data-drone].off input[type=range] { opacity: .35; }
+.param[data-drone].off output { color: var(--track); }
 
 /* ---- commit ---- */
 .commit { display: flex; align-items: center; gap: .4rem; padding: .5rem 0 0; }

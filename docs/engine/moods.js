@@ -1,0 +1,168 @@
+/* The performance parameter set: named weights, their bounds, validation.
+ *
+ * A macro over a weights table, not a model. The numbers are a starting point
+ * to tune by ear; nothing here is derived from measurement and nothing should
+ * be described as if it were.
+ *
+ * A mood is the bulk of what a performance is, but not all of it -- key, mode,
+ * seed, the drone slots and the two breath fields sit alongside the weights.
+ * `NUMERIC_PARAMS` and `validateParams` cover the whole set, because a client
+ * submits it whole.
+ */
+import { BREATH_CLAMP_S, INHALE_CLAMP_S } from "./breath.js";
+import * as scales from "./scales.js";
+
+// Tempo is part of a mood, not of the instrument: a mood that asks for more
+// notes in a breath needs a faster beat to fit them, and one that asks for
+// stillness needs a slower one. `bpm` is the quarter note.
+//
+// Written as labelled fields rather than a positional row: thirteen unlabelled
+// numbers per mood is a transcription error waiting to happen, and a row that
+// disagreed with its own key would go unnoticed because `get` looks up by key
+// while everything downstream reads `name`. The key is stamped in below, so
+// the two cannot drift.
+const PRESETS = {
+  "contemplative": { notes_per_breath: 4, step_leap_ratio: 0.80, ornament_rate: 0.10,
+    cadence_strength: 0.70, register_bias: 0.0, sweep_depth: 0.25, pushed_bias: 0.15,
+    breath_mean_s: 8.0, trill_rate: 0.10, call_response: 0.55, bpm: 72, phrase_shape: [3.0, 3.0] },
+  "mourning": { notes_per_breath: 3, step_leap_ratio: 0.85, ornament_rate: 0.15,
+    cadence_strength: 0.85, register_bias: -0.2, sweep_depth: 0.35, pushed_bias: 0.10,
+    breath_mean_s: 9.0, trill_rate: 0.08, call_response: 0.65, bpm: 56, phrase_shape: [2.0, 4.0] },
+  "pastoral": { notes_per_breath: 6, step_leap_ratio: 0.70, ornament_rate: 0.20,
+    cadence_strength: 0.55, register_bias: 0.1, sweep_depth: 0.30, pushed_bias: 0.25,
+    breath_mean_s: 7.0, trill_rate: 0.18, call_response: 0.50, bpm: 88, phrase_shape: [3.0, 3.0] },
+  "ceremonial": { notes_per_breath: 5, step_leap_ratio: 0.60, ornament_rate: 0.15,
+    cadence_strength: 0.75, register_bias: 0.2, sweep_depth: 0.45, pushed_bias: 0.45,
+    breath_mean_s: 7.5, trill_rate: 0.12, call_response: 0.75, bpm: 66, phrase_shape: [4.0, 2.0] },
+  "restless": { notes_per_breath: 11, step_leap_ratio: 0.45, ornament_rate: 0.40,
+    cadence_strength: 0.25, register_bias: 0.4, sweep_depth: 0.55, pushed_bias: 0.60,
+    breath_mean_s: 5.0, trill_rate: 0.45, call_response: 0.35, bpm: 120, phrase_shape: [2.0, 2.0] },
+  "sleep": { notes_per_breath: 2, step_leap_ratio: 0.92, ornament_rate: 0.02,
+    cadence_strength: 0.90, register_bias: -0.3, sweep_depth: 0.15, pushed_bias: 0.02,
+    breath_mean_s: 11.0, trill_rate: 0.02, call_response: 0.30, bpm: 48, phrase_shape: [2.0, 4.0] },
+};
+
+export const MOODS = Object.fromEntries(
+  Object.entries(PRESETS).map(([name, weights]) => [name, { name, ...weights }]));
+
+export function get(name) {
+  const key = String(name).toLowerCase();
+  if (!(key in MOODS)) {
+    throw new Error(`unknown mood ${name}; have ${Object.keys(MOODS).join(", ")}`);
+  }
+  return MOODS[key];
+}
+
+// The parameter set the control surface edits, with the range each is held to.
+// The page reads these rather than repeating them, so there is one source for
+// a bound.
+export const NUMERIC_PARAMS = {
+  notes_per_breath: [1.0, 14.0],
+  step_leap_ratio: [0.0, 1.0],
+  ornament_rate: [0.0, 1.0],
+  cadence_strength: [0.0, 1.0],
+  register_bias: [-1.0, 1.0],
+  sweep_depth: [0.0, 1.0],
+  pushed_bias: [0.0, 1.0],
+  trill_rate: [0.0, 1.0],
+  call_response: [0.0, 1.0],
+  bpm: [40.0, 160.0],
+  breath_mean_s: BREATH_CLAMP_S,
+  breath_spread_s: [0.0, 5.0],
+  inhale_s: INHALE_CLAMP_S,
+};
+
+// What counts as the mood, in its order. `breath_mean_s` and `bpm` are among
+// them, so the breath panel owns only spread and inhale -- two controls writing
+// one value would make it ambiguous which one won.
+export const MOOD_WEIGHTS = ["notes_per_breath", "step_leap_ratio",
+  "ornament_rate", "cadence_strength", "register_bias", "sweep_depth",
+  "pushed_bias", "trill_rate", "call_response", "bpm", "breath_mean_s"];
+
+// The parameters that are not mood weights, derived rather than restated: a
+// hand-written second list is one edit away from a control that never lights up
+// as edited, or a field `update` rejects forever as "must be a number".
+export const BREATH_FIELDS =
+  Object.keys(NUMERIC_PARAMS).filter((k) => !MOOD_WEIGHTS.includes(k));
+
+// The parameters chosen from a menu rather than dragged on a slider.
+export const CHOICE_PARAMS = ["mood", "key", "mode", "seed"];
+
+// Three drone voices, each an optional semitone offset from the tonic. Two
+// octaves either way is deliberately wide: a drone far below the lead is the
+// point of the instrument.
+export const DRONE_SLOTS = 3;
+export const DRONE_SEMITONES = [-24, 24];
+
+/* Root sounding, a fifth and an octave-down staged but silent. */
+export function defaultDrones() {
+  return [{ on: true, semitones: 0 },
+          { on: false, semitones: 7 },
+          { on: false, semitones: -12 }];
+}
+
+/* Every preset's weight set, so a client can offer preset switching. */
+export function presetWeights() {
+  const out = {};
+  for (const [name, preset] of Object.entries(MOODS)) {
+    out[name] = {};
+    for (const w of MOOD_WEIGHTS) out[name][w] = Number(preset[w]);
+  }
+  return out;
+}
+
+/* A Mood built from live weights, keeping the named preset's phrase shape.
+ * `phrase_shape` is a pair rather than a scalar, so it has no slider and stays
+ * whatever the preset chose. */
+export function fromWeights(name, weights) {
+  const preset = get(name);
+  const out = { name, phrase_shape: preset.phrase_shape };
+  for (const w of MOOD_WEIGHTS) out[w] = Number(weights[w]);
+  return out;
+}
+
+/* Whole-set validation. Returns {field: reason}; empty means valid. */
+export function validateParams(params) {
+  const errors = {};
+  for (const [name, [lo, hi]] of Object.entries(NUMERIC_PARAMS)) {
+    const value = Number(params[name]);
+    if (params[name] === undefined || params[name] === null || Number.isNaN(value)) {
+      errors[name] = "must be a number";
+      continue;
+    }
+    if (!(value >= lo && value <= hi)) {
+      errors[name] = `must be between ${lo} and ${hi}`;
+    }
+  }
+  try { scales.pitchClass(params.key ?? ""); }
+  catch { errors.key = `must be a note name, one of ${scales.NOTE_NAMES.join(", ")}`; }
+  try { scales.get(params.mode ?? ""); }
+  catch (e) { errors.mode = e.message; }
+  try { get(params.mood ?? ""); }
+  catch (e) { errors.mood = e.message; }
+
+  const drones = params.drones;
+  if (!Array.isArray(drones) || drones.length !== DRONE_SLOTS) {
+    errors.drones = `must be a list of ${DRONE_SLOTS} slots`;
+  } else {
+    const [lo, hi] = DRONE_SEMITONES;
+    drones.forEach((slot, i) => {
+      if (!slot || typeof slot !== "object"
+          || !("on" in slot) || !("semitones" in slot)) {
+        errors[`drones[${i}]`] = "must have 'on' and 'semitones'";
+        return;
+      }
+      const step = Number(slot.semitones);
+      if (!Number.isFinite(step)) {
+        errors[`drones[${i}]`] = "semitones must be a whole number";
+      } else if (step < lo || step > hi) {
+        errors[`drones[${i}]`] = `semitones must be ${lo} to ${hi}`;
+      }
+    });
+  }
+
+  if (!Number.isFinite(Number(params.seed))) {
+    errors.seed = "must be a whole number";
+  }
+  return errors;
+}

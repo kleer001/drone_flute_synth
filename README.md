@@ -1,163 +1,81 @@
 # drone_flute_synth
 
-A Linux app, and the measurement tools behind it, that plays an endless
-performance on a **simulated drone flute** — a multi-chambered flute where one
-chamber holds a sustained root while another plays melody on the same breath.
-**Status: v0 works.** There are two instruments sharing one music engine and
-differing only in what makes the sound.
+### ▶ [**Play it**](https://kleer001.github.io/drone_flute_synth/)
 
-- **In the browser** (`./run.sh`) — Python plans the breaths and the page plays
-  the loops with Web Audio. One process, no MIDI, and reverb you can move while
-  it sounds.
-- **Through GrandOrgue** (`./run_old.sh`) — the generator produces an `.organ`
-  that loads cleanly in GrandOrgue 3.17.3 and the player streams to it over
-  ALSA MIDI.
+A flute that never stops playing. One voice holds a drone underneath, another
+wanders around on top, and it won't play you the same phrase twice in a row.
 
-`profile`, `moods`, `melody` and `breath` are shared and know about neither.
-All five spikes in SPEC §13 are done — and two of them changed the design,
-including the one the project was built around (see
-[Intonation](#intonation-what-spike-s1-found)).
+It runs in your browser. Nothing to install, and the whole thing is 3.3 MB.
 
-| File | What it is |
+Start it somewhere:
+[A phrygian](https://kleer001.github.io/drone_flute_synth/?key=A&mode=phrygian) ·
+[F# blues, restless](https://kleer001.github.io/drone_flute_synth/?key=F%23&mode=blues&mood=restless) ·
+[C whole tone, half asleep](https://kleer001.github.io/drone_flute_synth/?key=C&mode=whole%20tone&mood=sleep)
+
+## What it sounds like
+
+It breathes. The melody runs until a player would need air, then everything
+goes quiet for a moment and comes back in on the beat. The drone breathes with
+it, because on a real drone flute both pipes share one lungful.
+
+Pick a key and a scale, slide some drones in underneath, and leave it going.
+It's meant to be left on.
+
+Every performance has a seed. Same seed, same piece.
+
+## Controls
+
+| | |
 |---|---|
-| [`SPEC.md`](SPEC.md) | The build specification — architecture, ODF mapping, breath model, controls, web GUI, acceptance criteria, ordered spikes |
-| `belvedere_drone/browser/` | The browser instrument: plans breaths, serves the page, and the Web Audio graph that sounds them |
-| [`RESEARCH.md`](RESEARCH.md) | What was researched and measured, including the loop-authoring experiment log and what each failed variant taught |
-| `tools/dsp.py` | Shared DSP helpers (sample loading, period-aware envelopes, seeded pitch detection) |
-| `tools/analyze_samples.py` | Inventory a sample folder: format, usable steady state, pitch accuracy vs. nominal |
-| `tools/loop_qa.py` | **Acceptance gate** — reads `smpl` loop points, tiles to 60 s, scores pulsing and wrap discontinuity |
-| `tools/loopfind.py` | Loop finder. Writes the `smpl` chunk GrandOrgue reads, so it *is* the build path — LoopAuditioneer turned out to be GUI-only |
-| `belvedere_drone/` | The app — profile loading, ODF generation, sample staging, breath and melody scheduling, MIDI out, web control surface, CLI |
-| `profiles/` | Instrument profiles, one TOML each |
+| **key** | any of the twelve |
+| **scale** | major, minor, the modes, harmonic minor, both pentatonics, blues, whole tone |
+| **drone 1–3** | three of them. Each on or off, at whatever interval you want under the tune |
+| **mood** | contemplative, mourning, pastoral, ceremonial, restless, sleep |
+| **the sliders** | how busy it is, how far it leaps, how much it decorates, how fast it moves, how long a breath lasts |
+| **room** | reverb, tone, level |
 
-## Scope
+Changes land on the next breath, so you never hear a phrase change its mind
+halfway through. The room controls move while it plays.
 
-Flutes only (no ocarinas). No physical instruments to record — samples come from
-[VCSL](https://github.com/sgossner/VCSL) (CC0) and tunings from published
-sources. Vibrato out of scope for the prototype. Live playback only.
+The URL sets where it starts: `?key=A&mode=phrygian&mood=sleep&seed=42`.
 
-## Setup
+<details>
+<summary><b>How it comes up with the tune</b></summary>
 
-Python 3.11+ (for `tomllib`), with numpy and scipy for the tools and
-mido + python-rtmidi for MIDI output. Everything runs straight from a checkout
-— no package install. The browser instrument needs nothing else. The
-GrandOrgue one additionally needs GrandOrgue itself; the upstream
-[AppImage](https://github.com/GrandOrgue/grandorgue/releases) needs no root,
-and `run_old.sh` fetches it.
+<br>
 
-```bash
-git clone https://github.com/kleer001/drone_flute_synth.git
-cd drone_flute_synth
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
-```
+It isn't shuffling notes. It writes a little phrase, three to five notes long,
+then spends the next few breaths arguing with it: the same phrase backwards,
+upside down, stretched long, cut off halfway.
 
-## Use
+Breaths come in pairs. The first one asks something and leaves it hanging,
+lower and plainer. The second answers, and the answer is always the question
+reworked rather than a new idea, which is why the two sound related. After
+three or so goes it drops the phrase and writes another.
 
-Inventory a folder of sustain samples:
+Inside a breath there's one high point, about two thirds through, and the line
+climbs to it and comes back down. It lands on notes that sit still against the
+drone, and it leans on the beat, so what you hear could be written on paper.
 
-```bash
-python3 tools/analyze_samples.py /path/to/VCSL/Aerophones/Edge-blown\ Aerophones/Baroque\ Soprano\ Recorder/Sustain
-```
+Turn **call / answer** up to hear the two halves pull apart. Turn **ornament**
+and **trill** up and it starts showing off.
 
-Build candidate loops, then gate them:
+</details>
+
+## Run it yourself
 
 ```bash
-python3 tools/loopfind.py <sustain_dir> <out_dir>
-python3 tools/loop_qa.py <out_dir>/*.wav
+./run.sh
 ```
 
-`loop_qa.py` exits non-zero if any loop fails, so it drops straight into CI or a
-build script. Thresholds: 60-second render envelope `CV < 0.02` (level pulsing)
-and `wrap < 3.0` (splice discontinuity, as a multiple of the loop's own typical
-sample-to-sample step).
+Serves the same files the public page does.
 
-The one-command path — fetches the samples if they are missing, builds the
-loops, serves the page and opens it. The browser makes the sound:
+## Made of
 
-```bash
-./run.sh                 # or --mood restless, --seed 42, --port 9000, --help
-```
+Thirteen recordings of a baroque soprano recorder from
+[VCSL](https://github.com/sgossner/VCSL), which is public domain. A recorder
+isn't a drone flute. It's what a free licence gets you, and it sounds like a
+recorder rather than the thing it's standing in for.
 
-The GrandOrgue path is the same idea, plus fetching GrandOrgue, building the
-organ and starting it:
-
-```bash
-./run_old.sh             # or --mood restless, --seed 42, --no-gui, --help
-```
-
-Or the GrandOrgue steps by hand:
-
-```bash
-python3 -m belvedere_drone.cli odf   profiles/recorder-drone-c.toml build --loops <out_dir>
-python3 -m belvedere_drone.cli check profiles/recorder-drone-c.toml --out-dir build
-python3 -m belvedere_drone.cli play  profiles/recorder-drone-c.toml --out-dir build --mood pastoral
-```
-
-Load `build/recorder-drone-c.organ` in GrandOrgue first; `play` finds the
-`GrandOrgue` ALSA port by name. `--dry-run` records the MIDI stream instead of
-opening a port. Every performance prints its seed, and the seed reproduces it
-byte for byte.
-
-**First run only:** in GrandOrgue, *Audio/MIDI → MIDI Objects → Import* and
-choose `grandorgue-midi.yaml` from this repo, then *File → Save*. The manual
-ships with a `Note` receiver whose key and velocity ranges are empty, so every
-note is dropped until this is imported. RESEARCH.md §9 has the full diagnosis.
-
-Add `--gui` for the web control surface on `http://127.0.0.1:8737/` — root,
-mood, the eight mood weights, breath shape and seed, edited as a working copy
-and submitted as a set that lands whole on the next breath boundary. The
-transport strip (start/stop, master level, panic) is live and bypasses submit.
-It costs no extra dependency: stdlib HTTP server, one static page. Closing the
-tab does not stop the performance.
-
-## Intonation: what spike S1 found
-
-The project was pitched on a strong claim — that Native American flutes have a
-**stretched octave** of roughly 1150–1250 cents, which a conventional sampler
-cannot represent and GrandOrgue's per-pipe tuning can. Going to find the
-measurements behind that claim did not confirm it:
-
-- Flutopedia, the standard reference, gives NAF scale steps in **integer
-  semitones** and states no octave size.
-- The acoustics paper it hosts treats a flat second octave as a **defect makers
-  correct**, not an intended feature.
-- Maker sources describe equal temperament, or offer **just intonation** as a
-  deliberate option.
-- The specific cents figures appear only in search-engine AI summaries — word
-  for word across differently-worded queries — and on no primary page.
-
-So the octave is 2:1, and the headline claim is retired. What replaces it is
-smaller and sourced: a drone flute has a real reason to want just intonation,
-because every melody note sounds against a fixed held root where tempered
-beating is exposed. The shipped profile uses a just minor pentatonic and records
-its provenance in the profile itself. RESEARCH.md §7 has the source-by-source
-record.
-
-## Current measured state
-
-Against VCSL's Baroque Soprano Recorder (13 sustain notes, 48 kHz stereo):
-
-- Steady state 4.5–10.6 s per note; pitch within **±6.2 cents** of nominal.
-- `loopfind.py` + `loop_qa.py`: **12 of 13** notes pass both thresholds — CV
-  0.005–0.020, wrap 0.10–1.29. The one failure is C4 on CV, at 0.0203 against a
-  0.02 threshold.
-- Drone pitch, measured through the browser instrument's own audio graph in an
-  `OfflineAudioContext`: within **8 cents** across C4, C3, C2 and C1, and most
-  of that is the recording's own intonation.
-
-See RESEARCH.md for how the loop number moved from 2/13 to 8/13 to 12/13, what
-a measurement bug nearly hid, and why measuring the envelope around the loop
-rather than across it was the step that mattered.
-
-On the app side, `cli.py check` asserts the MIDI-side acceptance criteria:
-determinism from the seed, no repeated consecutive breath, balanced note-on/off
-over 60 breaths, and a panic path that sends all-notes-off and all-sound-off.
-The one criterion still unverified is measured output pitch within ±3 cents,
-which needs GrandOrgue's audio recorded on a machine with a real audio device.
-
-## License
-
-MIT — see [LICENSE](LICENSE). Sample material referenced here comes from
-[VCSL](https://github.com/sgossner/VCSL) under CC0 and is not redistributed in
-this repo.
+The code is [MIT](LICENSE). If you want to know how it works inside, that's
+[CLAUDE.md](CLAUDE.md).

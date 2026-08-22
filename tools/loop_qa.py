@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Acceptance gate for drone loops (SPEC.md section 11, criterion 3).
+"""Acceptance gate for drone loops.
 
 Reads loop points from the WAV's `smpl` chunk - the same metadata
-LoopAuditioneer writes and GrandOrgue reads - tiles the loop out to 60
+tools/loopfind.py writes and the player reads back - tiles the loop out to 60
 seconds, and measures the two things that make a drone loop audibly fail:
 
   envelope CV   slow level pulsing once per loop, from the player's breath

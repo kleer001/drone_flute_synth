@@ -1,114 +1,141 @@
 # drone_flute_synth
 
-Design work and build-time measurement tools for a Linux app that plays an
-endless performance on a simulated drone flute. Sound generation is delegated
-to **GrandOrgue** playing a purpose-built sample set; the app is the player,
-not the synth.
+A lead voice over a drone, playing an endless generative performance in the
+browser. **The whole instrument is a static site in `docs/`** — engine included
+— published at https://kleer001.github.io/drone_flute_synth/ via GitHub Pages
+(source: `main` branch, `/docs` folder).
 
-**State: v0 implemented.** `belvedere_drone/` generates an ODF that loads in
-GrandOrgue 3.17.3 and plays a live breath-phrased performance over ALSA MIDI.
-The MIDI-side acceptance criteria pass; criterion 4 (measured output pitch)
-needs a real audio device and is unverified. All five spikes in SPEC §13 are
-done — RESEARCH.md §7 has the results, and several of them changed the spec.
-The web GUI of SPEC §10 is built: `--gui` serves it on `127.0.0.1:8737`.
+Key and scale are controls: twelve keys, twelve scales, plus three optional
+drone slots each holding a semitone offset from the tonic.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `SPEC.md` | The build specification — architecture, ODF mapping, breath model, controls, web GUI, acceptance criteria, ordered spikes. The authority; when code and spec disagree, resolve it explicitly. |
-| `RESEARCH.md` | What was researched and measured, including the loop-authoring experiment log and what each failed variant taught. Read §4 before touching loop code. |
-| `tools/dsp.py` | Shared DSP helpers — sample loading, period-aware envelopes, seeded pitch detection |
-| `tools/analyze_samples.py` | Inventory a sample folder: format, usable steady state, pitch accuracy vs. nominal |
-| `tools/loop_qa.py` | Acceptance gate (SPEC §12 criterion 3). Exits non-zero on failure |
-| `tools/loopfind.py` | Loop finder. Writes the `smpl` chunk GrandOrgue reads, so it is the build path — LoopAuditioneer turned out to be GUI-only (RESEARCH.md §7, S5) |
-| `belvedere_drone/` | The app: profile loading, ODF generation, breath and melody scheduling, MIDI out, control seam, web GUI, CLI |
-| `profiles/` | Instrument profiles, one TOML each (SPEC §7) |
+| `docs/index.html`, `docs/app.js`, `docs/style.css` | The page: the Web Audio graph, the controls, the lookahead scheduler |
+| `docs/engine/scales.js` | Keys and scales — semitone offsets from a tonic, and the pitches they yield in a range |
+| `docs/engine/melody.js` | The motif engine — the part that makes it musical |
+| `docs/engine/breath.js` | The breath cycle: phrases resolved to bar lines, plus `Meter` |
+| `docs/engine/moods.js` | Parameter set: weights, bounds, whole-set validation, drone defaults |
+| `docs/engine/profile.js` | Everything true of *these recordings*: sounding offset, lead range, drone octave, meter, makeup gain, provenance |
+| `docs/engine/samples.js` | `smpl`-chunk parsing and nearest-recording lookup |
+| `docs/engine/instrument.js` | The seam the page talks to: params in, breaths out |
+| `docs/engine/rng.js` | Seeded PRNG, plus round-half-to-even and non-negative modulo |
+| `docs/loops/` | The authored loops, **committed** — without them there is no player to link to |
+| `check.mjs` | Acceptance gate for the engine (node, no browser) |
+| `tools/` | Build-time sample work in Python: inventory, loop authoring, loop QA, manifest |
 
-`tools/` imports only numpy, scipy, and its own `dsp` module — no package
-install, no cross-repo dependency. Scripts run directly from a checkout.
+There is no Python at runtime. `tools/` is a build step and imports only numpy,
+scipy and its own `dsp` module.
 
 ## Running
 
-There are two instruments, sharing one music engine and differing only in what
-makes the sound.
-
-`./run.sh` is the browser one: Python plans the breaths and the page plays the
-same loops with Web Audio. No GrandOrgue, no MIDI, no ODF, one process. Reverb,
-tone and level are ours and move while it sounds. `belvedere_drone/browser/`
-holds it.
-
-`./run_old.sh` is the GrandOrgue one: it fetches what is missing, builds the
-organ, starts GrandOrgue, serves the submit-gated GUI on the first free port at
-or above 8737, and plays over ALSA MIDI. The steps below are that, done by hand.
-
-`profile`, `moods`, `melody` and `breath` are shared and know about neither.
-
 ```bash
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
+./run.sh                 # serves docs/ on the first free port at or above 8740
+./run.sh --rebuild       # re-author the loops from VCSL first (needs the venv)
 
-# build-time: samples -> loops -> QA gate
-python3 tools/analyze_samples.py <sustain_dir>
-python3 tools/loopfind.py <sustain_dir> <out_dir>
-python3 tools/loop_qa.py <out_dir>/*.wav
-
-# app: profile -> ODF, then play into a running GrandOrgue
-python3 -m belvedere_drone.cli odf profiles/recorder-drone-c.toml build
-python3 -m belvedere_drone.cli check profiles/recorder-drone-c.toml --out-dir build
-python3 -m belvedere_drone.cli play profiles/recorder-drone-c.toml --out-dir build --mood pastoral
-
-# the same performance with the web control surface (SPEC §10)
-python3 -m belvedere_drone.cli play profiles/recorder-drone-c.toml --out-dir build --gui
+node check.mjs --key F# --mode blues     # the engine gate
+python3 tools/loop_qa.py docs/loops/*.wav  # the sample gate
 ```
 
-`play` needs GrandOrgue running with the generated organ loaded; it finds the
-`GrandOrgue` ALSA port by name. `--dry-run` records the MIDI stream instead of
-opening a port, which is how the determinism criteria are tested.
+`?key=`, `?mode=`, `?mood=` and `?seed=` set the page's starting state.
 
-The engine is authoritative and headless: `control.Controller` owns the
-performance and both `cli.py` and `web/server.py` are clients of it. Nothing in
-`control.py` imports the server, and the server never touches the scheduler
-thread, the MIDI port, or the panic path.
+## How it fits together
 
-GrandOrgue ignores incoming notes until a manual has a MIDI receiver bound in
-its own window (right-click the manual, *Listen for events*). The generated
-console draws its manual and stops so that is possible, and `midi_out` sends via
-`Midi Through` so the binding stays valid across runs.
+**The melody engine does not know what a scale is.** `Phrasing` works on
+integer *positions* in a note list — `pos + step`, `_fold`, `notes[pos]`. The
+only pitch-aware function is `stability()`, which folds intervals against the
+tonic to find rest points. So changing key or scale means handing it a different
+list, and the generator is untouched by it. Preserve this. It is why twelve
+scales cost nothing and why the thirteenth will too.
 
-That binding is a one-time step per machine, not per run. GrandOrgue keeps it in
-`~/Documents/GrandOrgue/Data/<HASH>-0.cmb` — gzipped text, written on clean exit
-— and it survives both restarts and regeneration of the ODF. It is not in
-`~/Documents/GrandOrgue/Settings/`, which stays empty; looking there is what
-makes a working binding look lost. RESEARCH.md §7 has the sources, the two
-failed attempts at seeding it from config, and why the file cannot be shipped
-prebuilt.
+**Pitch is arithmetic, not authorship.** `scales.pitches` yields every MIDI note
+of a key and scale inside a range; `SampleSet.voiceFor` picks the nearest
+recording and returns the cents to reach the target. There is no cents table and
+no hand-written pitch-fill map, and there should not be one again. The
+recordings are whole-tone spaced, so nothing inside the recorded span shifts
+more than 100 cents — asserted by `check.mjs` across all 144 combinations.
 
-There is no test suite. Verification is measurement, and there are two gates:
-`loop_qa.py` for the sample side, and `cli.py check` for the MIDI side. A change
+**Note names are sounding pitch.** The loop files are named by fingering and a
+soprano recorder sounds an octave above that; `soundingOffset` in
+`engine/profile.js` is the only place that distinction exists.
+
+**Loop points must be read before decoding.** `decodeAudioData` discards the
+`smpl` chunk *and* detaches the ArrayBuffer, and a buffer whose loop points went
+missing does not error — it plays once and stops. `samples.js` walks the RIFF
+chunk table rather than scanning for the bytes "smpl", which can occur inside
+sample data.
+
+**Drones are three optional slots**, each a semitone offset from the tonic, so a
+fifth is +7 in every scale and a drone can sit deliberately outside the one
+being played. They share one gain stage scaled by 1/sqrt(n).
+
+**Everything the page reads off `describe()` must be in `describe()`.** It
+returns the ranges, the menus, the voices *and* the envelope times and voice
+gains. A field omitted there surfaces as `NaN` deep in an `AudioParam` call, not
+as a missing-property error.
+
+**Facts about the recordings live in `profile.js`, not in the audio graph.**
+Makeup gain is the example that got this wrong once: it is a compensation for
+how quietly VCSL recorded, so it belongs with the sample set and not beside the
+`GainNode` that applies it. Re-author the loops at a different level and every
+such constant should be in one file.
+
+**Adding a parameter touches four places, and three of them are derived.** Put
+its range in `moods.NUMERIC_PARAMS` and, if the mood owns it, its name in
+`moods.MOOD_WEIGHTS`; `BREATH_FIELDS` is then computed as the difference, and
+the page builds its row from `describe()`. Only a menu-valued parameter needs a
+fifth edit (`moods.CHOICE_PARAMS` and its markup in `index.html`). Give it a
+default in the `Instrument` constructor or `update()` will reject it forever as
+"must be a number".
+
+## Verification
+
+There is no unit-test suite. Verification is measurement, and there are two
+gates: `tools/loop_qa.py` for the samples, `check.mjs` for the engine. A change
 to loop or DSP code is unverified until it has been run against a real sample
-folder and the pass count reported. A change to the ODF generator is unverified
-until GrandOrgue has actually loaded the output — offline inspection missed
-bugs that made every pipe fail to load (RESEARCH.md §7, S5).
+folder and the pass count reported. A change to the audio graph or the page is
+unverified until a browser has actually played it — serve `docs/` and drive it
+headlessly.
+
+Note that `docs/app.js` is an ES module, so its internals are **not** reachable
+as globals from an injected script. To measure audio, import the engine modules
+dynamically and render through an `OfflineAudioContext`; that exercises the same
+voices, loop points and detune the live graph uses.
+
+Measured, and worth not re-deriving: three drones in A rendered 440.37 / 657.53
+/ 220.18 Hz against A4 440, E5 659.26, A3 220.
 
 ## Conventions
 
 - Two hard-won DSP rules, stated in `tools/dsp.py`'s module docstring and not
   to be relaxed without measurement: RMS envelope windows must span several
   pitch periods, and pitch detection must be seeded from the nominal note in
-  the filename. Both have bitten this code before — see RESEARCH.md §4.
+  the filename.
 - Thresholds live in one place: `loop_qa.py`'s defaults (`CV < 0.02`,
-  `wrap < 3.0`), matching SPEC §12. Do not fork a second set of numbers.
-- Sample audio is never committed. VCSL (CC0) is the source; `.gitignore`
-  excludes `*.wav` deliberately.
-- Honesty gates in the profile format (SPEC §7): a field is marked "measured"
-  only if it was measured. Estimates are labelled as estimates, with source.
-- `snake_case` functions and variables, `PascalCase` classes. Comments explain
-  why, not what.
-- One path, no fallbacks. Raise rather than silently substituting a default.
+  `wrap < 3.0`). Parameter ranges live in `moods.NUMERIC_PARAMS`, and the page
+  reads them from `describe()` rather than restating them.
+- The engine uses round-half-to-even (`rng.js`'s `round`), not `Math.round`.
+  The grid arithmetic lands on exact halves often enough that half-up shows as
+  a rhythmic lean.
+- Rebuilding loops must also refresh `docs/loops/manifest.json` — the browser
+  cannot list a directory, and a stale manifest is a silently missing note.
+  `run.sh --rebuild` does both, and `check.mjs` fails if they disagree.
+- Loop files hold the loop **twice**, with the loop points on the second copy.
+  The first is pre-roll (the note's entry, and what a crossfading reader needs);
+  nothing reads past `loopEnd`, so a third copy would be a third of the payload
+  fetched and decoded unheard.
+- `snake_case` in Python, `camelCase` in JS, `PascalCase` classes. Parameter
+  *keys* stay snake_case on both sides, because they cross the boundary.
+- Prefer deriving a list to writing a second one. `BREATH_FIELDS`,
+  `TRANSFORM_NAMES` and `ROOM_FIELDS` are all computed from the table they
+  describe, because a hand-kept copy is one edit from a control that silently
+  never lights up.
+- One path, no fallbacks. Throw rather than silently substituting a default.
 
 ## Scope
 
-Flutes only, no ocarinas. No physical instruments are recorded — samples come
-from VCSL, tunings from published sources. Vibrato is out of scope for the
-prototype. Live playback only; no rendering to file.
+Flutes only. No physical instruments are recorded — samples come from VCSL
+(CC0). Live playback only; no rendering to file. Vibrato is out of scope,
+though `detune` is an automatable `AudioParam`, so it is a choice rather than a
+limit.

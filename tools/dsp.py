@@ -1,6 +1,6 @@
 """Shared DSP helpers for drone-flute sample analysis.
 
-Two rules learned the hard way during the loop spike (see RESEARCH.md):
+Two rules learned the hard way during the loop spike:
 
 1. Any RMS-envelope window MUST span several pitch periods. A window shorter
    than one period tracks the waveform itself, so "envelope flattening" then

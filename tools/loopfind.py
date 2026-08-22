@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Reference loop finder for sustained flute samples.
 
-SUPERSEDED for production use by LoopAuditioneer (GPLv3, maintained in the
-GrandOrgue org, batch mode, writes the same `smpl` metadata GrandOrgue reads).
-Kept because it is dependency-light, scriptable, and documents the approach;
-see RESEARCH.md for the eight variants tried and what each one taught.
+This is the build path. It writes the `smpl` chunk the player reads back for
+loop points, so a loop it did not author is a loop the instrument cannot play.
+Eight algorithm variants were tried; the ordering below is what survived.
 
 Pipeline, in the order that matters:
   1. locate the steady region (period-aware envelope window)
@@ -14,6 +13,7 @@ Pipeline, in the order that matters:
   4. crossfade the loop tail against the material preceding a, so the wrap is
      a naturally consecutive pair of samples
   5. divide out the slow breath envelope, LAST
+  6. emit the loop twice, pointing the loop points at the second copy
 
 Steps 4 and 5 partially undo each other and whichever runs last wins its
 metric. Flattening goes last deliberately: the crossfade touches ~12 ms while
@@ -52,7 +52,7 @@ def flatten(seg, hop):
     endpoint ramp, does fix wrap and ruins CV: the ramp it takes out is the
     breath trend itself (13/13 on wrap, 0/13 overall). Removing that ramp in
     the linear rather than the log domain is worse again, distorting a
-    multiplicative gain (CV 0.004-0.026 -> 0.016-0.234). See RESEARCH.md
+    multiplicative gain (CV 0.004-0.026 -> 0.016-0.234).
     section 4.
     """
     pad = int(hop)
@@ -109,11 +109,11 @@ def build_loop(sig, sr, f0, guard_ms=12.0, lo_s=0.30, hi_s=3.0):
 
 
 def write_wav_with_loop(path, sr, mono, loop_start, loop_end, midi_note):
-    """16-bit mono WAV carrying an `smpl` chunk, the format GrandOrgue reads.
+    """16-bit mono WAV carrying an `smpl` chunk: the loop points and the pitch.
 
-    `midi_note` becomes `dwMIDIUnityNote`, which GrandOrgue reads back as the
-    sample's own recorded pitch. It must be the note actually played: a wrong
-    unity note silently shifts every auto-tuned pipe built from this file.
+    `midi_note` becomes `dwMIDIUnityNote`, the standard field for the sample's
+    own recorded pitch. It must be the note actually played: a wrong unity note
+    silently shifts every note a player derives from this file.
     """
     pcm = np.clip(mono, -1, 1)
     raw = (pcm * 32767).astype('<i2').tobytes()
@@ -151,14 +151,13 @@ def main():
             print(f"{note:5} no loop found")
             continue
         err, loop = built
-        # Emit the loop three times and point the loop at the MIDDLE copy, so
-        # the file has real material on both sides of the loop points. The
-        # pre-roll is not decoration: GrandOrgue crossfades the loop against
-        # the samples *preceding* loop start, and with a loop starting at
-        # sample 0 it discards the loop entirely -- "the loop 1 is ignored:
-        # not enough samples for crossfade before it's start", then "No valid
-        # loops exist in the file", and the pipe fails to load.
-        out = np.tile(loop, 3)
+        # Emit the loop twice and point the loop at the SECOND copy. The first
+        # is pre-roll: it plays as the note's entry, and a player that
+        # crossfades the seam needs material before loop start or it discards
+        # the loop outright. Nothing needs material *after* loop end -- playback
+        # wraps there and never reads past it -- so a third copy would be a
+        # third of every file fetched, decoded and held in memory unheard.
+        out = np.tile(loop, 2)
         dst = os.path.join(args.out_dir, f"{note}_loop.wav")
         write_wav_with_loop(dst, sr, out, len(loop), 2 * len(loop),
                             midi_of(note))
