@@ -26,7 +26,7 @@ from urllib.parse import unquote, urlparse
 
 from .. import breath as breath_mod, melody, moods, profile as profile_mod
 from ..control import MOOD_WEIGHTS, NUMERIC_PARAMS, _mood_from
-from ..profile import Meter
+from ..profile import Chamber, Meter, midi_of
 
 STATIC = Path(__file__).parent / "static"
 CONTENT_TYPES = {".html": "text/html; charset=utf-8",
@@ -59,6 +59,50 @@ def read_loop_points(path):
     with wave.open(str(path)) as w:
         sr = w.getframerate()
     return start / sr, end / sr, sr
+
+
+# How far below the profile's own lowest drone note this instrument will go.
+# The profile stops where GrandOrgue does: it accepts PitchTuning only within
+# +/-1800 cents, so a second octave down -- which needs -2400 -- cannot be
+# written into an ODF at all. AudioBufferSourceNode.detune has no such limit,
+# so the browser can play the octaves the organ has to refuse.
+EXTRA_DRONE_OCTAVES = 2
+
+
+def _octave_below(note, octaves):
+    """'C4' -> 'C2' for two octaves down. Raises below octave 0."""
+    body, octave = note[:-1], int(note[-1])
+    if octave - octaves < 0:
+        raise ValueError(f"{note} has no octave {octave - octaves}")
+    return f"{body}{octave - octaves}"
+
+
+def extend_drone(profile, octaves=EXTRA_DRONE_OCTAVES):
+    """Give this copy of the profile the low drones only Web Audio can reach.
+
+    The on-disk profile is shared with the organ and stays exactly as it is;
+    only the Profile object this server holds gets the extra notes, each one
+    the same recording the lowest drone already uses, pitched down whole
+    octaves. `tuning_offset` works that out on its own.
+    """
+    drone = profile.chambers["drone"]
+    lowest = min(drone.notes, key=midi_of)
+    source = drone.sample_for(lowest)
+    notes, cents, samples = (list(drone.notes), dict(drone.cents),
+                             dict(drone.samples))
+    for n in range(1, octaves + 1):
+        try:
+            name = _octave_below(lowest, n)
+        except ValueError:
+            break
+        if name in notes:
+            continue
+        notes.append(name)
+        samples[name] = source
+        cents[name] = drone.cents_for(lowest)
+    profile.chambers["drone"] = Chamber(drone.name, drone.holes, notes, cents,
+                                        samples)
+    return profile
 
 
 class Instrument:
@@ -310,7 +354,7 @@ def main(argv=None):
     ap.add_argument("--port", type=int, default=8740)
     args = ap.parse_args(argv)
 
-    profile = profile_mod.load(args.profile)
+    profile = extend_drone(profile_mod.load(args.profile))
     inst = Instrument(profile, args.loops, args.mood, args.seed, args.root)
     inst.loops()                      # fail now if a loop is missing, not later
     httpd = serve(inst, args.host, args.port)
