@@ -80,3 +80,14 @@ footer { padding: .6rem .5rem; color: var(--muted); font-size: 11px; }
 .tab.on { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
 p.hint { margin: .4rem 0 0; color: var(--muted); font-size: 11px; }
 .param.edited label { color: #b26a00; }
+
+/* ---- commit ---- */
+.commit { display: flex; align-items: center; gap: .4rem; padding: .5rem 0 0; }
+.commit button {
+  height: 1.7rem; padding: 0 .7rem; cursor: pointer;
+  border: 1px solid var(--rule); border-radius: 3px; background: var(--panel);
+}
+.commit .go { border-color: var(--ink); font-weight: 600; }
+.commit button:disabled { opacity: .4; cursor: default; }
+.status { color: var(--muted); font-variant-numeric: tabular-nums; }
+.status.pending { color: var(--edit, #b26a00); }

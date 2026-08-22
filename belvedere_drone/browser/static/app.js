@@ -18,6 +18,8 @@ let running = false;
 let cursor = 0;               // audio-clock time the next breath begins
 let live = [];                // sources still sounding, for a clean stop
 let history = [];
+let working = {};             // what the performance tab shows
+let applyAt = null;           // audio-clock time a submitted set starts sounding
 
 // The VCSL sustains are quiet -- they peak between 0.02 and 0.13, and the C4
 // the drone uses is the quietest of them. Played back at their own level the
@@ -42,6 +44,19 @@ const LABELS = {
 const DECIMALS = {notes_per_breath: 1, breath_mean_s: 1, breath_spread_s: 1,
                   inhale_s: 2, bpm: 0};
 const STEPS = {bpm: 1};      // tempo counts whole beats, not half ones
+
+/* Rooms. These live here rather than in the profile because they are not
+   properties of the instrument -- the same flute can be played in any of
+   them, and none of it reaches the engine. */
+const ROOMS = {
+  "dry":       {wet: 0.04, decay: 0.5, predelay: 0,  tone: 18000},
+  "small room":{wet: 0.18, decay: 1.1, predelay: 8,  tone: 15000},
+  "chapel":    {wet: 0.32, decay: 2.6, predelay: 22, tone: 12000},
+  "hall":      {wet: 0.42, decay: 4.2, predelay: 35, tone: 10000},
+  "cathedral": {wet: 0.52, decay: 6.5, predelay: 55, tone: 8000},
+  "canyon":    {wet: 0.62, decay: 8.0, predelay: 110, tone: 6000},
+};
+const ROOM_FIELDS = ["wet", "decay", "predelay", "tone"];
 
 const $ = (id) => document.getElementById(id);
 
@@ -309,14 +324,9 @@ function paramRow(name) {
                         step: STEPS[name] ?? ((hi - lo) > 6 ? 0.5 : 0.01)});
   const out = document.createElement("output");
 
-  const show = () => {
-    out.textContent = Number(input.value).toFixed(DECIMALS[name] ?? 2);
-    row.classList.toggle("edited",
-      Math.abs(parseFloat(input.value) - inst.params[name]) > 1e-9);
-  };
-  input.addEventListener("input", show);
-  input.addEventListener("change", () => {
-    reshape({[name]: parseFloat(input.value)});
+  input.addEventListener("input", () => {
+    working[name] = parseFloat(input.value);
+    renderParams();
   });
   row.append(label, input, out);
   return row;
@@ -338,52 +348,111 @@ function describe() {
     built = true;
   }
 
-  $("mood").value = inst.params.mood;
-  $("root").value = inst.params.root;
-  if (document.activeElement !== $("seed")) $("seed").value = inst.params.seed;
-  for (const row of document.querySelectorAll("[data-field]")) {
-    const name = row.dataset.field;
-    const input = row.querySelector("input");
-    if (document.activeElement !== input) input.value = inst.params[name];
-    row.querySelector("output").textContent =
-      Number(inst.params[name]).toFixed(DECIMALS[name] ?? 2);
-    row.classList.remove("edited");
-  }
+  working = Object.assign({}, inst.params);
+  renderParams();
   $("meter").textContent =
     `${inst.meter.bpm} bpm · ${inst.meter.beats_per_measure}/4 · ` +
     `bar ${inst.meter.measure_s.toFixed(2)}s`;
+}
+
+function isDirty(name) {
+  const a = working[name], b = inst.params[name];
+  return typeof b === "number"
+    ? Math.abs(parseFloat(a) - b) > 1e-9 : String(a) !== String(b);
+}
+
+const anyDirty = () =>
+  inst !== null && Object.keys(inst.params).some(isDirty);
+
+/* The working copy on screen, and whether it differs from what is sounding. */
+function renderParams() {
+  $("mood").value = working.mood;
+  $("root").value = working.root;
+  if (document.activeElement !== $("seed")) $("seed").value = working.seed;
+  for (const row of document.querySelectorAll("[data-field]")) {
+    const name = row.dataset.field;
+    const input = row.querySelector("input");
+    if (document.activeElement !== input) input.value = working[name];
+    row.querySelector("output").textContent =
+      Number(working[name]).toFixed(DECIMALS[name] ?? 2);
+    row.classList.toggle("edited", isDirty(name));
+  }
+  for (const name of ["mood", "root", "seed"]) {
+    $(name).closest(".param").classList.toggle("edited", isDirty(name));
+  }
+  const dirty = anyDirty();
+  $("submit").disabled = !dirty;
+  $("revert").disabled = !dirty;
+  renderStatus();
+}
+
+/* The page owns the schedule, so it knows exactly when a submitted set starts
+   sounding: at the end of what is already scheduled. */
+function renderStatus() {
+  const el = $("status");
+  if (applyAt === null) {
+    el.className = "status";
+    el.textContent = anyDirty() ? "Unsubmitted changes." : "";
+    return;
+  }
+  const left = applyAt - (ctx ? ctx.currentTime : 0);
+  if (left <= 0) { applyAt = null; el.className = "status"; el.textContent = "";
+                   return; }
+  el.className = "status pending";
+  el.textContent = `Applies in ${Math.ceil(left)} s`;
 }
 
 /* Anything that shapes the music goes back to Python; the change lands on the
    next breath the page asks for, so the ones already scheduled play out. That
    is the same "applies on a breath boundary" the organ player has, without
    its submit gate -- this one is a toy and answers immediately. */
-async function reshape(changes) {
-  if (!inst) return;
+async function submit() {
+  if (!inst || !anyDirty()) return;
+  const pending = Object.assign({}, working);
   try {
-    inst = await api("/performance", changes);
+    inst = await api("/performance", pending);
   } catch (err) {
     note(`refused: ${err.message}`);
     return;
   }
+  // Breaths already scheduled play out first, so the set starts sounding
+  // where the schedule currently ends.
+  applyAt = running ? cursor : null;
   describe();
-  note("takes effect on the next breath");
+  working = pending;
+  renderParams();
+  note("");
+}
+
+function revert() {
+  working = Object.assign({}, inst.params);
+  renderParams();
+  note("");
 }
 
 /* ---------- wiring ---------- */
 
 $("run").addEventListener("click", () => (running ? stop() : start()));
-// Choosing a preset moves every weight it owns, tempo included.
+// Choosing a mood moves every weight it owns, tempo included -- still only in
+// the working copy, so nothing sounds different until Submit.
 $("mood").addEventListener("change", () => {
   const name = $("mood").value;
-  reshape(Object.assign({mood: name}, inst.preset_weights[name] || {}));
+  Object.assign(working, {mood: name}, inst.preset_weights[name] || {});
+  renderParams();
 });
-$("root").addEventListener("change", () => reshape({root: $("root").value}));
-$("seed").addEventListener("change",
-  () => reshape({seed: parseInt($("seed").value, 10) || 0}));
+$("root").addEventListener("change", () => {
+  working.root = $("root").value; renderParams();
+});
+$("seed").addEventListener("input", () => {
+  working.seed = parseInt($("seed").value, 10) || 0; renderParams();
+});
 $("reseed").addEventListener("click", () => {
-  reshape({seed: Math.floor(Math.random() * 2 ** 31)});
+  working.seed = Math.floor(Math.random() * 2 ** 31);
+  $("seed").value = working.seed;
+  renderParams();
 });
+$("submit").addEventListener("click", submit);
+$("revert").addEventListener("click", revert);
 
 for (const tab of document.querySelectorAll(".tab")) {
   tab.addEventListener("click", () => {
@@ -419,4 +488,16 @@ bind("predelay",
 bind("tone", (v) => tone.frequency.setTargetAtTime(v, ctx.currentTime, 0.05),
      (v) => `${(v / 1000).toFixed(1)} kHz`);
 
+const roomSel = $("preset");
+for (const name of Object.keys(ROOMS)) roomSel.appendChild(new Option(name, name));
+roomSel.value = "chapel";
+roomSel.addEventListener("change", () => {
+  const room = ROOMS[roomSel.value];
+  for (const f of ROOM_FIELDS) {
+    $(f).value = room[f];
+    $(f).dispatchEvent(new Event("input"));
+  }
+});
+
 setInterval(fill, TICK_MS);
+setInterval(renderStatus, 250);

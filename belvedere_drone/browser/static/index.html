@@ -36,20 +36,29 @@
     </div>
     <div class="rows" id="weights"></div>
     <div class="rows" id="breath"></div>
-    <p class="hint">Changes land on the next breath. The ones already
-      scheduled play out first.</p>
+    <div class="commit">
+      <button id="submit" class="go" disabled>Submit</button>
+      <button id="revert" disabled>Revert</button>
+      <span id="status" class="status"></span>
+    </div>
+    <p class="hint">Nothing you move here sounds until you submit, and then it
+      lands on a breath boundary. The breaths already scheduled play out first.</p>
   </section>
 
   <section data-panel="room" hidden>
     <div class="rows">
+      <div class="param"><label for="preset">room</label>
+        <select id="preset"></select><output></output></div>
+    </div>
+    <div class="rows">
       <div class="param"><label for="wet">reverb</label>
-        <input type="range" id="wet" min="0" max="1" step="0.01" value="0.28">
+        <input type="range" id="wet" min="0" max="1" step="0.01" value="0.32">
         <output id="wet-out"></output></div>
       <div class="param"><label for="decay">decay</label>
         <input type="range" id="decay" min="0.2" max="8" step="0.1" value="2.6">
         <output id="decay-out"></output></div>
       <div class="param"><label for="predelay">pre-delay</label>
-        <input type="range" id="predelay" min="0" max="200" step="1" value="20">
+        <input type="range" id="predelay" min="0" max="200" step="1" value="22">
         <output id="predelay-out"></output></div>
       <div class="param"><label for="tone">tone</label>
         <input type="range" id="tone" min="800" max="18000" step="100" value="12000">
