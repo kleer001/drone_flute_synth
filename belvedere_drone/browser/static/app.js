@@ -30,6 +30,19 @@ const MAKEUP = 6.0;
 let master = null, dryGain = null, wetGain = null, convolver = null,
     preDelay = null, tone = null, sum = null, limiter = null;
 
+const LABELS = {
+  notes_per_breath: "notes / breath", step_leap_ratio: "step : leap",
+  ornament_rate: "ornament", cadence_strength: "cadence",
+  register_bias: "register bias", sweep_depth: "sweep depth",
+  pushed_bias: "pushed bias", trill_rate: "trill",
+  call_response: "call / answer", bpm: "tempo",
+  breath_mean_s: "breath mean", breath_spread_s: "breath spread",
+  inhale_s: "inhale gap",
+};
+const DECIMALS = {notes_per_breath: 1, breath_mean_s: 1, breath_spread_s: 1,
+                  inhale_s: 2, bpm: 0};
+const STEPS = {bpm: 1};      // tempo counts whole beats, not half ones
+
 const $ = (id) => document.getElementById(id);
 
 /* ---------- transport ---------- */
@@ -280,35 +293,79 @@ function stop() {
   $("now").textContent = "";
 }
 
+/* One row of the performance panel. Display follows the drag; the engine is
+   told on release, so a slider does not post thirty times on the way. */
+function paramRow(name) {
+  const [lo, hi] = inst.ranges[name];
+  const row = document.createElement("div");
+  row.className = "param";
+  row.dataset.field = name;
+
+  const label = document.createElement("label");
+  label.htmlFor = `s-${name}`;
+  label.textContent = LABELS[name] || name;
+  const input = document.createElement("input");
+  Object.assign(input, {type: "range", id: `s-${name}`, min: lo, max: hi,
+                        step: STEPS[name] ?? ((hi - lo) > 6 ? 0.5 : 0.01)});
+  const out = document.createElement("output");
+
+  const show = () => {
+    out.textContent = Number(input.value).toFixed(DECIMALS[name] ?? 2);
+    row.classList.toggle("edited",
+      Math.abs(parseFloat(input.value) - inst.params[name]) > 1e-9);
+  };
+  input.addEventListener("input", show);
+  input.addEventListener("change", () => {
+    reshape({[name]: parseFloat(input.value)});
+  });
+  row.append(label, input, out);
+  return row;
+}
+
+let built = false;
 function describe() {
   document.title = inst.profile;
   $("title").textContent = inst.profile;
   $("prov").textContent = inst.provenance;
-  const m = $("mood");
-  m.innerHTML = "";
-  for (const name of inst.moods) m.appendChild(new Option(name, name));
-  m.value = inst.mood;
-  const r = $("root");
-  r.innerHTML = "";
-  for (const n of inst.drone_notes) r.appendChild(new Option(n, n));
-  r.value = inst.root;
-  $("seed").value = inst.seed;
+
+  if (!built) {
+    const m = $("mood");
+    for (const name of inst.moods) m.appendChild(new Option(name, name));
+    const r = $("root");
+    for (const n of inst.drone_notes) r.appendChild(new Option(n, n));
+    for (const name of inst.mood_weights) $("weights").appendChild(paramRow(name));
+    for (const name of inst.breath_fields) $("breath").appendChild(paramRow(name));
+    built = true;
+  }
+
+  $("mood").value = inst.params.mood;
+  $("root").value = inst.params.root;
+  if (document.activeElement !== $("seed")) $("seed").value = inst.params.seed;
+  for (const row of document.querySelectorAll("[data-field]")) {
+    const name = row.dataset.field;
+    const input = row.querySelector("input");
+    if (document.activeElement !== input) input.value = inst.params[name];
+    row.querySelector("output").textContent =
+      Number(inst.params[name]).toFixed(DECIMALS[name] ?? 2);
+    row.classList.remove("edited");
+  }
   $("meter").textContent =
     `${inst.meter.bpm} bpm · ${inst.meter.beats_per_measure}/4 · ` +
     `bar ${inst.meter.measure_s.toFixed(2)}s`;
 }
 
-/* Mood, root and seed reshape the music, so they go back to Python. The
-   change lands on the next breath the page asks for -- the ones already
-   scheduled keep playing, which is the same "applies on a breath boundary"
-   the organ player has. */
-async function reshape() {
+/* Anything that shapes the music goes back to Python; the change lands on the
+   next breath the page asks for, so the ones already scheduled play out. That
+   is the same "applies on a breath boundary" the organ player has, without
+   its submit gate -- this one is a toy and answers immediately. */
+async function reshape(changes) {
   if (!inst) return;
-  inst = await api("/performance", {
-    mood: $("mood").value,
-    root: $("root").value,
-    seed: parseInt($("seed").value, 10) || 0,
-  });
+  try {
+    inst = await api("/performance", changes);
+  } catch (err) {
+    note(`refused: ${err.message}`);
+    return;
+  }
   describe();
   note("takes effect on the next breath");
 }
@@ -316,13 +373,28 @@ async function reshape() {
 /* ---------- wiring ---------- */
 
 $("run").addEventListener("click", () => (running ? stop() : start()));
-$("mood").addEventListener("change", reshape);
-$("root").addEventListener("change", reshape);
-$("seed").addEventListener("change", reshape);
-$("reseed").addEventListener("click", () => {
-  $("seed").value = Math.floor(Math.random() * 2 ** 31);
-  reshape();
+// Choosing a preset moves every weight it owns, tempo included.
+$("mood").addEventListener("change", () => {
+  const name = $("mood").value;
+  reshape(Object.assign({mood: name}, inst.preset_weights[name] || {}));
 });
+$("root").addEventListener("change", () => reshape({root: $("root").value}));
+$("seed").addEventListener("change",
+  () => reshape({seed: parseInt($("seed").value, 10) || 0}));
+$("reseed").addEventListener("click", () => {
+  reshape({seed: Math.floor(Math.random() * 2 ** 31)});
+});
+
+for (const tab of document.querySelectorAll(".tab")) {
+  tab.addEventListener("click", () => {
+    for (const t of document.querySelectorAll(".tab")) {
+      t.classList.toggle("on", t === tab);
+    }
+    for (const s of document.querySelectorAll("[data-panel]")) {
+      s.hidden = s.dataset.panel !== tab.dataset.tab;
+    }
+  });
+}
 
 // Audio controls are ours and need no round trip, so they move while it sounds.
 const bind = (id, fn, fmt) => {

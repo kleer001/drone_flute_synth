@@ -19,34 +19,48 @@
 <main>
   <h1 id="title">drone flute</h1>
 
-  <div class="rows">
-    <div class="param"><label for="mood">mood</label>
-      <select id="mood"></select><output></output></div>
-    <div class="param"><label for="root">drone root</label>
-      <select id="root"></select><output></output></div>
-    <div class="param"><label for="seed">seed</label>
-      <input type="text" id="seed" inputmode="numeric">
-      <button id="reseed" class="link" title="New seed">&#8635;</button></div>
-  </div>
+  <nav class="tabs">
+    <button class="tab on" data-tab="performance">performance</button>
+    <button class="tab" data-tab="room">room</button>
+  </nav>
 
-  <p class="section">room <span class="hint">— ours, live</span></p>
-  <div class="rows">
-    <div class="param"><label for="wet">reverb</label>
-      <input type="range" id="wet" min="0" max="1" step="0.01" value="0.28">
-      <output id="wet-out"></output></div>
-    <div class="param"><label for="decay">decay</label>
-      <input type="range" id="decay" min="0.2" max="8" step="0.1" value="2.6">
-      <output id="decay-out"></output></div>
-    <div class="param"><label for="predelay">pre-delay</label>
-      <input type="range" id="predelay" min="0" max="200" step="1" value="20">
-      <output id="predelay-out"></output></div>
-    <div class="param"><label for="tone">tone</label>
-      <input type="range" id="tone" min="800" max="18000" step="100" value="12000">
-      <output id="tone-out"></output></div>
-    <div class="param"><label for="master">level</label>
-      <input type="range" id="master" min="0" max="1" step="0.01" value="0.8">
-      <output id="master-out"></output></div>
-  </div>
+  <section data-panel="performance">
+    <div class="rows" id="head">
+      <div class="param"><label for="mood">mood</label>
+        <select id="mood"></select><output></output></div>
+      <div class="param"><label for="root">drone root</label>
+        <select id="root"></select><output></output></div>
+      <div class="param"><label for="seed">seed</label>
+        <input type="text" id="seed" inputmode="numeric">
+        <button id="reseed" class="link" title="New seed">&#8635;</button></div>
+    </div>
+    <div class="rows" id="weights"></div>
+    <div class="rows" id="breath"></div>
+    <p class="hint">Changes land on the next breath. The ones already
+      scheduled play out first.</p>
+  </section>
+
+  <section data-panel="room" hidden>
+    <div class="rows">
+      <div class="param"><label for="wet">reverb</label>
+        <input type="range" id="wet" min="0" max="1" step="0.01" value="0.28">
+        <output id="wet-out"></output></div>
+      <div class="param"><label for="decay">decay</label>
+        <input type="range" id="decay" min="0.2" max="8" step="0.1" value="2.6">
+        <output id="decay-out"></output></div>
+      <div class="param"><label for="predelay">pre-delay</label>
+        <input type="range" id="predelay" min="0" max="200" step="1" value="20">
+        <output id="predelay-out"></output></div>
+      <div class="param"><label for="tone">tone</label>
+        <input type="range" id="tone" min="800" max="18000" step="100" value="12000">
+        <output id="tone-out"></output></div>
+      <div class="param"><label for="master">level</label>
+        <input type="range" id="master" min="0" max="1" step="0.01" value="0.8">
+        <output id="master-out"></output></div>
+    </div>
+    <p class="hint">Ours, not the engine's — these move while it sounds, with
+      no round trip.</p>
+  </section>
 
   <p id="note" class="note"></p>
   <pre id="log"></pre>

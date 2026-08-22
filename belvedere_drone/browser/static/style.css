@@ -68,3 +68,15 @@ pre {
   overflow-x: auto; white-space: pre;
 }
 footer { padding: .6rem .5rem; color: var(--muted); font-size: 11px; }
+
+/* ---- tabs ---- */
+.tabs { display: flex; gap: .25rem; margin: 1rem 0 .4rem; }
+.tab {
+  padding: .25rem .7rem; cursor: pointer; color: var(--muted);
+  background: none; border: 1px solid transparent; border-radius: 3px 3px 0 0;
+  border-bottom: 2px solid transparent;
+}
+.tab:hover { color: var(--ink); }
+.tab.on { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
+p.hint { margin: .4rem 0 0; color: var(--muted); font-size: 11px; }
+.param.edited label { color: #b26a00; }

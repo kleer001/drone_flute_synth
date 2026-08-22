@@ -24,7 +24,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from .. import breath as breath_mod, moods, profile as profile_mod
+from .. import breath as breath_mod, melody, moods, profile as profile_mod
+from ..control import MOOD_WEIGHTS, NUMERIC_PARAMS, _mood_from
+from ..profile import Meter
 
 STATIC = Path(__file__).parent / "static"
 CONTENT_TYPES = {".html": "text/html; charset=utf-8",
@@ -66,16 +68,92 @@ class Instrument:
         self.profile = profile
         self.loops_dir = Path(loops_dir)
         self._lock = threading.RLock()
-        self.set_performance(mood_name, seed, root)
+        preset = moods.get(mood_name)
+        # The same parameter set the organ player commits (control.py), so a
+        # weight means the same thing in both instruments.
+        self.params = {w: float(getattr(preset, w)) for w in MOOD_WEIGHTS}
+        self.params.update({
+            "mood": preset.name,
+            "seed": int(seed),
+            "root": root or profile.chambers["drone"].notes[0],
+            "breath_spread_s": float(profile.breath_spread_s),
+            "inhale_s": float(profile.inhale_s),
+        })
+        self._rebuild()
 
-    def set_performance(self, mood_name, seed, root=None):
+    def validate(self, params):
+        """{field: reason}; empty means the set is playable."""
+        errors = {}
+        for name, (lo, hi) in NUMERIC_PARAMS.items():
+            try:
+                value = float(params[name])
+            except (KeyError, TypeError, ValueError):
+                errors[name] = "must be a number"
+                continue
+            if not lo <= value <= hi:
+                errors[name] = f"must be between {lo:g} and {hi:g}"
+        drone_notes = self.profile.chambers["drone"].notes
+        if params.get("root") not in drone_notes:
+            errors["root"] = ("the drone chamber cannot sound this note; "
+                              "it has " + ", ".join(drone_notes))
+        try:
+            moods.get(params.get("mood", ""))
+        except ValueError as exc:
+            errors["mood"] = str(exc)
+        try:
+            int(params["seed"])
+        except (KeyError, TypeError, ValueError):
+            errors["seed"] = "must be a whole number"
+        return errors
+
+    def _rebuild(self):
+        """Start the performance over from the seed."""
+        p = self.params
+        self.performer = breath_mod.Performer(
+            self.profile, _mood_from(p["mood"], p),
+            random.Random(int(p["seed"])), root=p["root"],
+            breath_spread_s=p["breath_spread_s"], inhale_s=p["inhale_s"])
+
+    def _retune(self):
+        """Change how the player plays without interrupting what it is playing.
+
+        Rebuilding instead would hand back a Performer seeded afresh: the
+        random stream would replay from the top, the motif being developed
+        would be discarded, and the breath count would restart. Nudging a
+        slider would then wipe the musical thread, which is the opposite of
+        what a control is for. Only a new seed is allowed to do that.
+        """
+        p = self.params
+        mood = _mood_from(p["mood"], p)
+        perf = self.performer
+        perf.mood = mood
+        perf.meter = Meter(mood.bpm, self.profile.beats_per_measure)
+        perf.breath_spread_s = p["breath_spread_s"]
+        perf.inhale_s = p["inhale_s"]
+        if perf.root != p["root"]:
+            perf.root = p["root"]
+            perf.phrasing.root = p["root"]
+            perf.phrasing.stability = melody.stability(perf.melody_notes,
+                                                       p["root"])
+
+    def update(self, changes):
+        """Apply a partial parameter change. Raises ValueError on a bad set."""
         with self._lock:
-            self.mood_name = mood_name
-            self.seed = int(seed)
-            self.root = root or self.profile.chambers["drone"].notes[0]
-            self.performer = breath_mod.Performer(
-                self.profile, moods.get(mood_name), random.Random(self.seed),
-                root=self.root)
+            unknown = set(changes) - set(self.params)
+            if unknown:
+                raise ValueError(f"unknown parameter(s): "
+                                 f"{', '.join(sorted(unknown))}")
+            merged = dict(self.params, **changes)
+            errors = self.validate(merged)
+            if errors:
+                raise ValueError("; ".join(f"{k}: {v}"
+                                           for k, v in sorted(errors.items())))
+            # A new seed means "play something else", so it starts over.
+            # Everything else reshapes the performance from where it is. Either
+            # way the breaths already scheduled keep playing.
+            restart = int(merged["seed"]) != int(self.params["seed"])
+            self.params = merged
+            self._rebuild() if restart else self._retune()
 
     def voices(self):
         """{chamber: {note: {file, cents}}} -- which loop sounds each note."""
@@ -110,10 +188,14 @@ class Instrument:
             return {
                 "profile": self.profile.display,
                 "provenance": self.profile.provenance_line(),
-                "mood": self.mood_name,
+                "params": dict(self.params),
+                "ranges": {k: list(v) for k, v in NUMERIC_PARAMS.items()},
+                "mood_weights": list(MOOD_WEIGHTS),
+                "breath_fields": ["breath_spread_s", "inhale_s"],
                 "moods": sorted(moods.MOODS),
-                "seed": self.seed,
-                "root": self.root,
+                "preset_weights": {
+                    name: {w: float(getattr(preset, w)) for w in MOOD_WEIGHTS}
+                    for name, preset in moods.MOODS.items()},
                 "drone_notes": list(self.profile.chambers["drone"].notes),
                 "meter": {"bpm": meter.bpm,
                           "beats_per_measure": meter.beats_per_measure,
@@ -200,11 +282,10 @@ class _Handler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}")
         if url.path == "/performance":
-            # Mood, seed and root reshape the performance, so the phrase
-            # generator is rebuilt and the next breath comes from the new one.
-            inst.set_performance(body.get("mood", inst.mood_name),
-                                 body.get("seed", inst.seed),
-                                 body.get("root", inst.root))
+            try:
+                inst.update(body)
+            except ValueError as exc:
+                return self._json(422, {"error": str(exc)})
             return self._json(200, inst.describe())
         self._json(404, {"error": "not found"})
 
