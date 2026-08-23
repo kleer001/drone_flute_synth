@@ -58,16 +58,17 @@ HIGHPASS_HZ = 20.0
 POOLS = {
     "frame_drum": dict(
         source="Membranophones/Struck Membranophones/Frame Drum",
-        rules=[(r"HDrumL_(?P<stroke>Hit|HitMuted|Hand)"
+        # Hand is dropped: body level -58 dB with 8.6 dB of signal to noise.
+        rules=[(r"HDrumL_(?P<stroke>Hit|HitMuted)"
                 r"(?:_v(?P<level>\d+))?_rr(?P<variant>\d+)_Sum\.wav",
-                {"Hit": "hit", "HitMuted": "muted", "Hand": "hand"})],
+                {"Hit": "hit", "HitMuted": "muted"})],
         max_s=4.0,
     ),
     "frame_drum_small": dict(
         source="Membranophones/Struck Membranophones/Frame Drum",
-        rules=[(r"HDrumS_(?P<stroke>Hit|HitMuted|Hand)"
+        rules=[(r"HDrumS_(?P<stroke>Hit|HitMuted)"
                 r"(?:_v(?P<level>\d+))?_rr(?P<variant>\d+)_Sum\.wav",
-                {"Hit": "hit", "HitMuted": "muted", "Hand": "hand"})],
+                {"Hit": "hit", "HitMuted": "muted"})],
         max_s=3.0,
     ),
     "rattle": dict(
