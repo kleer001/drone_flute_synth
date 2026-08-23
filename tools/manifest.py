@@ -15,12 +15,24 @@ Two kinds of recording, in two directories:
 Both naming schemes are ours, so both parse without a special case. The
 irregular VCSL names never reach this far -- oneshot.py resolved them.
 
+Each one-shot is also measured, and the measurement travels in the manifest so
+the runtime never has to decode a file to find out how loud it is. What is
+stored is the measurement only; what to do about it -- which is to level the
+layers of a stroke against each other -- is the engine's policy, in
+`StrokeSet`, where it can be read and changed without re-authoring anything.
+
     python3 tools/manifest.py <site_root>
 """
 import json
+import math
 import os
 import re
 import sys
+
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dsp import body_level, load_mono
 
 VERSION = 2
 LOOPS_DIR = "loops"
@@ -53,12 +65,18 @@ def read_strokes(root):
         if not m:
             unparsed.append(name)
             continue
+        sr, sig = load_mono(os.path.join(path, name))
         pool = pools.setdefault(m["pool"], {"dir": STROKES_DIR, "samples": []})
         pool["samples"].append({
             "file": name,
             "stroke": m["stroke"],
             "level": int(m["level"]),
             "variant": int(m["variant"]),
+            "loudness_db": round(20 * math.log10(max(body_level(sig, sr), 1e-9)), 2),
+            # Carried so the acceptance gate can prove that levelling the
+            # layers of a stroke against each other does not push any
+            # recording into clipping, without decoding a single file.
+            "peak": round(float(np.abs(sig).max()), 4),
         })
     if unparsed:
         # Silently skipping would be a stroke authored and never heard.

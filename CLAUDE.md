@@ -95,12 +95,35 @@ table keyed on the recorded number would leave the bottom of the velocity range
 unplayable. `pick` spreads whatever layers exist evenly over 0–127 instead, and
 `check.mjs` asserts that velocity 0 and 127 reach the softest and loudest.
 
-**A pool is normalised by one factor, not file by file.** Normalising each
-recording to its own peak would erase exactly what the velocity layers encode:
-a soft hit and a hard one would come out the same size, and choosing a layer
-would change the timbre without changing the loudness. Measured: the frame
-drum's two layers sit 17–22 dB apart, which is a cliff rather than a ramp at
-the midpoint of the velocity range.
+**A pool is normalised by one factor, not file by file — and then levelled
+per recording at playback.** Two different operations on two different axes,
+and collapsing them into one is the mistake worth not repeating.
+
+The *build step* scales a whole pool by a single factor, so every level
+relationship the recordings carry survives into the files. Normalising each
+file to its own peak there would flatten the lot, including the one
+relationship that means something: a muted hit really is quieter than an open
+one.
+
+The *engine* then applies a per-recording gain that brings every recording of
+**one stroke** to a common loudness, never across strokes. What that removes is
+two accidents. Across layers, VCSL recorded the frame drum about 15 dB apart in
+body level and `pick` crosses between those layers at velocity 64. Within a
+layer, the two round-robin takes differ by up to 5.4 dB — more than a whole
+step of the velocity curve, so two strikes at the *same* velocity landed 5 dB
+apart and a sweep came out non-monotone: velocity 32 measured quieter than
+velocity 24. Neither is dynamics; dynamics come continuously from the velocity
+curve. A layer's worth is its timbre and a round robin's worth is that no two
+onsets are identical, and both survive untouched.
+
+Measured before and after: the worst spread inside a stroke was 21.9 dB, and is
+now under 0.5 dB, with the velocity sweep monotone across the layer boundary.
+Boosting is safe because it moves signal and noise together — the takes being
+lifted carry 39–43 dB of signal to noise and still do afterwards.
+
+Loudness is measured at build time into the manifest and the *policy* is in
+`StrokeSet._level`, so what to do about a measurement can change without
+re-authoring a sample.
 
 **Percussion draws from its own random stream.** Sharing the melody's would
 mean a strike consumed a number the phrase generator was going to use, so
@@ -184,9 +207,12 @@ Measured, and worth not re-deriving: three drones in A rendered 440.37 / 657.53
 
 ## Conventions
 
-- Two hard-won DSP rules, stated in `tools/dsp.py`'s module docstring and each
-  established by measurement: RMS envelope windows span several pitch periods,
-  and pitch detection is seeded from the nominal note in the filename.
+- Three hard-won DSP rules, stated in `tools/dsp.py` and each established by
+  measurement: RMS envelope windows span several pitch periods, pitch detection
+  is seeded from the nominal note in the filename, and the size of a struck
+  sound is the loudest 50 ms window rather than the peak — the frame drum's
+  layers differ by 19 dB of peak but 15 dB of body, so levelling by peak
+  over-corrects by 4 dB.
 - Thresholds live in one place: `loop_qa.py`'s defaults (`CV < 0.02`,
   `wrap < 3.0`). Parameter ranges live in `moods.NUMERIC_PARAMS`, and the page
   reads them from `describe()` rather than restating them.

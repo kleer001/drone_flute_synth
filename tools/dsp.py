@@ -110,3 +110,23 @@ def steady_region(sig, sr, f_nominal, thresh=0.5, trim=0.12):
     s0, s1 = idx[0] * hop, min((idx[-1] + 1) * hop, len(sig))
     pad = int(trim * (s1 - s0))
     return s0 + pad, s1 - pad
+
+
+def body_level(sig, sr, ms=50.0):
+    """Loudest `ms` window, as RMS. The perceived size of a struck sound.
+
+    Peak is the wrong measure for this and measurably so: the frame drum's two
+    velocity layers differ by 19 dB of peak but 15 dB of body, because a peak is
+    one sample of transient and what the ear weighs is the few tens of
+    milliseconds around it. Levelling by peak would over-correct by 4 dB.
+
+    A window rather than whole-file RMS because these are one-shots of very
+    different lengths -- a 0.1 s shaker and an 8 s wash -- and whole-file RMS
+    would rate a long decay as quiet merely for having a tail.
+    """
+    n = max(1, int(sr * ms / 1000.0))
+    if sig.size < n:
+        return float(np.sqrt(np.mean(sig ** 2)))
+    energy = np.concatenate([[0.0], np.cumsum(sig.astype(np.float64) ** 2)])
+    return float(np.sqrt(((energy[n:] - energy[:-n]) / n).max())
+)

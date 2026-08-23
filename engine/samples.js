@@ -185,16 +185,24 @@ export class StrokeSet {
     this.dir = dir;
 
     this._byStroke = new Map();          // stroke -> level -> [path]
+    const loudness = new Map();          // path -> body level, dB
+    const strokeOf = new Map();          // path -> stroke
     for (const s of samples) {
       if (!s || !isStr(s.file) || !isStr(s.stroke)) {
         fail("every sample needs a file and a stroke");
       }
       if (!Number.isFinite(Number(s.level))) fail(`${s.file} has no numeric level`);
+      if (!Number.isFinite(Number(s.loudness_db))) {
+        fail(`${s.file} has no loudness_db -- regenerate with tools/manifest.py`);
+      }
       const level = Number(s.level);
       if (!this._byStroke.has(s.stroke)) this._byStroke.set(s.stroke, new Map());
       const layers = this._byStroke.get(s.stroke);
       if (!layers.has(level)) layers.set(level, []);
-      layers.get(level).push(`${dir}/${s.file}`);
+      const path = `${dir}/${s.file}`;
+      layers.get(level).push(path);
+      loudness.set(path, Number(s.loudness_db));
+      strokeOf.set(path, s.stroke);
     }
     // Sorted, so which variation a seed reaches does not depend on the order
     // the build step happened to walk the directory in.
@@ -202,7 +210,59 @@ export class StrokeSet {
       for (const paths of layers.values()) paths.sort();
     }
     this.strokes = [...this._byStroke.keys()].sort();
+    this._gain = this._level(loudness, strokeOf);
     this._last = new Map();              // stroke|level -> the last path used
+  }
+
+  /* A playback gain per recording, bringing every recording of one stroke to
+   * a common loudness. Not a change to the files: they keep the levels the
+   * pool was normalised to, and this is applied when one is struck.
+   *
+   * Two things were making velocity a staircase rather than a ramp, and both
+   * are level differences that were never meant to carry meaning.
+   *
+   * Across layers: VCSL recorded the frame drum at two forces about 15 dB
+   * apart in body level, and `pick` crosses between them at the middle of the
+   * velocity range, so velocity 63 and velocity 65 differed by 15 dB.
+   *
+   * Within a layer: the two round-robin takes of one stroke differ by up to
+   * 5.4 dB, which is larger than a whole step of the velocity curve. Two
+   * strikes at the *same* velocity would land 5 dB apart, and a sweep came out
+   * non-monotone -- measurably, velocity 32 sounded quieter than velocity 24.
+   *
+   * Neither is dynamics. Dynamics are supplied continuously by the velocity
+   * curve the caller applies. What a layer is worth is its *timbre* -- a hard
+   * strike is brighter and rings longer -- and what a round robin is worth is
+   * that no two onsets are identical. Both survive levelling untouched;
+   * only the accident of how loud the take happened to be does not.
+   *
+   * Levelling is within a stroke, never across strokes. A muted hit really is
+   * quieter than an open one, and flattening that would erase the difference
+   * between two strokes rather than between two takes of one.
+   *
+   * The reference is the loudest recording, so quieter ones are boosted.
+   * Measured on the frame drum: the takes being lifted carry 39-43 dB of
+   * signal to noise, and a boost moves signal and noise together, so they
+   * still carry 39-43 dB afterwards.
+   */
+  _level(loudness, strokeOf) {
+    const ref = new Map();
+    for (const [path, db] of loudness) {
+      const stroke = strokeOf.get(path);
+      ref.set(stroke, Math.max(ref.get(stroke) ?? -Infinity, db));
+    }
+    const gain = new Map();
+    for (const [path, db] of loudness) {
+      gain.set(path, Math.pow(10, (ref.get(strokeOf.get(path)) - db) / 20));
+    }
+    return gain;
+  }
+
+  /* The levelling gain for one recording. */
+  gainFor(path) {
+    const g = this._gain.get(path);
+    if (g === undefined) throw new Error(`pool ${this.name}: no recording ${path}`);
+    return g;
   }
 
   /* Every file this pool can reach, so the page loads only what it needs. */
@@ -229,7 +289,7 @@ export class StrokeSet {
     return this._byStroke.get(stroke).get(level).length;
   }
 
-  /* One recording of `stroke` at `velocity` (0-127), as {path, level}.
+  /* One recording of `stroke` at `velocity` (0-127), as {path, level, gain}.
    *
    * The layer is found by spreading the recorded layers evenly across the
    * velocity range rather than by reading the numbers VCSL used: the frame
@@ -253,14 +313,18 @@ export class StrokeSet {
     const choices = paths.length > 1 ? paths.filter((p) => p !== last) : paths;
     const path = rng.choice(choices);
     this._last.set(key, path);
-    return { path, stroke, level };
+    return { path, stroke, level, gain: this.gainFor(path) };
   }
 
   /* What the page needs to know about this pool without loading it. */
   describe() {
     const strokes = {};
     for (const s of this.strokes) {
-      strokes[s] = this.levels(s).map((l) => ({ level: l, variants: this.variants(s, l) }));
+      strokes[s] = this.levels(s).map((l) => ({
+        level: l,
+        variants: this._byStroke.get(s).get(l).map((path) => ({
+          path, gain: this.gainFor(path) })),
+      }));
     }
     return { name: this.name, dir: this.dir, strokes };
   }

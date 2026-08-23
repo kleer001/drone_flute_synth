@@ -52,9 +52,10 @@ function perform(manifest, opts) {
 // directories instead would make this gate blind to the one failure the
 // manifest exists to prevent -- a recording on disk the page never learns
 // about, or one listed that is not there.
-let manifest;
+let manifest, rawManifest;
 try {
-  manifest = parseManifest(JSON.parse(readFileSync(MANIFEST, "utf8")));
+  rawManifest = JSON.parse(readFileSync(MANIFEST, "utf8"));
+  manifest = parseManifest(rawManifest);
 } catch (e) {
   console.error(`cannot read ${MANIFEST} (${e.message}). ` +
                 `Run tools/manifest.py, or ./run.sh --rebuild.`);
@@ -247,6 +248,40 @@ if (!pools.length) {
   } else {
     failures.push(`layers: ${unusedLayers[0]}`);
     console.log(`FAIL  layers: ${unusedLayers[0]}`);
+  }
+
+  // Levelling a stroke's layers is what keeps the middle of the velocity
+  // range from being a step. VCSL recorded the frame drum 15 dB apart, and
+  // `pick` crosses between those layers at velocity 64.
+  const steps = [], clipped = [];
+  let worst = 0;
+  for (const [name, pool] of pools) {
+    const byStroke = new Map();
+    for (const smp of rawManifest.percussion[name].samples) {
+      const path = `${rawManifest.percussion[name].dir}/${smp.file}`;
+      // Levelling multiplies the whole recording, transient included.
+      const after = smp.peak * pool.gainFor(path);
+      if (after > 1.0) clipped.push(`${smp.file} -> ${after.toFixed(2)}`);
+      if (!byStroke.has(smp.stroke)) byStroke.set(smp.stroke, []);
+      byStroke.get(smp.stroke).push(
+        { raw: smp.loudness_db, levelled: smp.loudness_db + 20 * Math.log10(pool.gainFor(path)) });
+    }
+    for (const [stroke, taken] of byStroke) {
+      const span = (key) => Math.max(...taken.map((t) => t[key])) -
+                            Math.min(...taken.map((t) => t[key]));
+      worst = Math.max(worst, span("raw"));
+      if (span("levelled") > 0.5) {
+        steps.push(`${name}/${stroke} still ${span("levelled").toFixed(1)} dB apart`);
+      }
+    }
+  }
+  if (!steps.length && !clipped.length) {
+    console.log(`PASS  levelling: every recording of a stroke within 0.5 dB after gain ` +
+                `(worst spread before: ${worst.toFixed(1)} dB), nothing clips`);
+  } else {
+    const why = steps.length ? steps[0] : `clips: ${clipped[0]}`;
+    failures.push(`levelling: ${why}`);
+    console.log(`FAIL  levelling: ${why}`);
   }
 
   // A round robin that can repeat is not one. Two identical onsets running is
