@@ -81,6 +81,13 @@ moment is heard as a rasp. Structural notes are never dropped, which is why the
 phrase that comes out is the phrase that went in, and why `noteSequence` is
 unaffected. `check.mjs` asserts both halves.
 
+**The player is an ideal one.** One blowing pressure for every note and every
+breath (`breath.VELOCITY`), and true pitch throughout. The only thing that moves
+the level is the metric accent — downbeat, beat, offbeat, about 2 dB across —
+plus ornaments sitting a little under the note they decorate. Do not add drift,
+swell or breath-pressure variation back: it was tried and it reads as slop, and
+on a real duct flute louder would also mean sharper, which is worse.
+
 **Drones are three optional slots**, each a semitone offset from the tonic, so a
 fifth is +7 in every scale and a drone can sit deliberately outside the one
 being played. They share one gain stage scaled by 1/sqrt(n).

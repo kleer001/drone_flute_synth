@@ -31,7 +31,7 @@ function render(b) {
     `${n.name}@${n.start_s.toFixed(6)}+${n.dur_s.toFixed(6)}` +
     `v${n.velocity}${n.grace ? "g" : ""}`).join(" ");
   return `${b.index} ${b.length_s.toFixed(6)} ${b.inhale_s.toFixed(6)} ` +
-         `${b.layer} ${b.drones.join(",")} | ${notes}`;
+         `${b.drones.join(",")} | ${notes}`;
 }
 
 function perform(files, opts) {

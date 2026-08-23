@@ -295,7 +295,7 @@ export class Phrasing {
 
   // -- one breath ---------------------------------------------------------
 
-  breath(mood, meter, breathLenS, layerVelocity) {
+  breath(mood, meter, breathLenS, velocity) {
     const rng = this.rng;
     if (!this.notes.length) throw new Error("no playable notes");
 
@@ -350,24 +350,23 @@ export class Phrasing {
         if (held === 0) break;
         const durS = held * unitS * ARTICULATION;
 
-        // Metric hierarchy, from the bar rather than from the phrase: a
-        // downbeat is the strong position, other beats are next, and anything
-        // between beats is weakest.
+        // The only thing that moves the level: a downbeat is the strong
+        // position, other beats are next, anything between beats is weakest.
+        // This is how the beat is heard, not a swell -- the player holds one
+        // pressure and the phrase gets its shape from pitch and rhythm.
         let accent;
         if (at % meter.unitsPerMeasure === 0) accent = 1.0;
         else if (at % meter.UNITS_PER_BEAT === 0) accent = 0.94;
         else accent = 0.86;
-        const sweep = 1 - mood.sweep_depth * Math.abs(2 * (at / units) - 1);
-        const velocity = Math.max(1, Math.min(127,
-          round(layerVelocity * sweep * accent)));
+        const vel = Math.max(1, Math.min(127, round(velocity * accent)));
 
         if (Math.abs(pos - prevPos) > 2 && rng.random() < ornRate) {
-          scheduled.push(...this._runInto(prevPos, pos, startS, unitS, velocity));
+          scheduled.push(...this._runInto(prevPos, pos, startS, unitS, vel));
         }
         if (rng.random() < ornRate) {
-          scheduled.push(...this._ornament(pos, startS, velocity));
+          scheduled.push(...this._ornament(pos, startS, vel));
         }
-        scheduled.push(new Note(this.notes[pos], startS, durS, velocity));
+        scheduled.push(new Note(this.notes[pos], startS, durS, vel));
         at += held;
         placed += 1;
       }

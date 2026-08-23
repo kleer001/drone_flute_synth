@@ -44,8 +44,7 @@ let master = null, dryGain = null, wetGain = null, convolver = null,
 const LABELS = {
   notes_per_breath: "notes / breath", step_leap_ratio: "step : leap",
   ornament_rate: "ornament", cadence_strength: "cadence",
-  register_bias: "register bias", sweep_depth: "sweep depth",
-  pushed_bias: "pushed bias",
+  register_bias: "register bias",
   call_response: "call / answer", bpm: "tempo",
   breath_mean_s: "breath mean", breath_spread_s: "breath spread",
   inhale_s: "inhale gap",
@@ -255,10 +254,10 @@ function remember(b) {
   history = [b, ...history].slice(0, 8);
   $("log").textContent = history.map((h) =>
     `breath ${String(h.index).padStart(3)}  ${h.bars} bar  ` +
-    `${h.length_s.toFixed(2)}s  ${h.layer.padEnd(6)} ${h.role.padEnd(18)} ` +
+    `${h.length_s.toFixed(2)}s  ${h.role.padEnd(18)} ` +
     sounded(h)).join("\n");
   $("now").textContent =
-    `breath ${b.index} · ${b.bars} bar · ${b.layer} · ${sounded(b)}`;
+    `breath ${b.index} · ${b.bars} bar · ${sounded(b)}`;
 }
 
 function note(msg) { $("note").textContent = msg; }

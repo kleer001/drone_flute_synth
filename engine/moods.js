@@ -23,22 +23,22 @@ import * as scales from "./scales.js";
 // the two cannot drift.
 const PRESETS = {
   "contemplative": { notes_per_breath: 4, step_leap_ratio: 0.80, ornament_rate: 0.10,
-    cadence_strength: 0.70, register_bias: 0.0, sweep_depth: 0.25, pushed_bias: 0.15,
+    cadence_strength: 0.70, register_bias: 0.0,
     breath_mean_s: 8.0, call_response: 0.55, bpm: 72, phrase_shape: [3.0, 3.0] },
   "mourning": { notes_per_breath: 3, step_leap_ratio: 0.85, ornament_rate: 0.15,
-    cadence_strength: 0.85, register_bias: -0.2, sweep_depth: 0.35, pushed_bias: 0.10,
+    cadence_strength: 0.85, register_bias: -0.2,
     breath_mean_s: 9.0, call_response: 0.65, bpm: 56, phrase_shape: [2.0, 4.0] },
   "pastoral": { notes_per_breath: 6, step_leap_ratio: 0.70, ornament_rate: 0.20,
-    cadence_strength: 0.55, register_bias: 0.1, sweep_depth: 0.30, pushed_bias: 0.25,
+    cadence_strength: 0.55, register_bias: 0.1,
     breath_mean_s: 7.0, call_response: 0.50, bpm: 88, phrase_shape: [3.0, 3.0] },
   "ceremonial": { notes_per_breath: 5, step_leap_ratio: 0.60, ornament_rate: 0.15,
-    cadence_strength: 0.75, register_bias: 0.2, sweep_depth: 0.45, pushed_bias: 0.45,
+    cadence_strength: 0.75, register_bias: 0.2,
     breath_mean_s: 7.5, call_response: 0.75, bpm: 66, phrase_shape: [4.0, 2.0] },
   "restless": { notes_per_breath: 11, step_leap_ratio: 0.45, ornament_rate: 0.40,
-    cadence_strength: 0.25, register_bias: 0.4, sweep_depth: 0.55, pushed_bias: 0.60,
+    cadence_strength: 0.25, register_bias: 0.4,
     breath_mean_s: 5.0, call_response: 0.35, bpm: 120, phrase_shape: [2.0, 2.0] },
   "sleep": { notes_per_breath: 2, step_leap_ratio: 0.92, ornament_rate: 0.02,
-    cadence_strength: 0.90, register_bias: -0.3, sweep_depth: 0.15, pushed_bias: 0.02,
+    cadence_strength: 0.90, register_bias: -0.3,
     breath_mean_s: 11.0, call_response: 0.30, bpm: 48, phrase_shape: [2.0, 4.0] },
 };
 
@@ -62,8 +62,6 @@ export const NUMERIC_PARAMS = {
   ornament_rate: [0.0, 1.0],
   cadence_strength: [0.0, 1.0],
   register_bias: [-1.0, 1.0],
-  sweep_depth: [0.0, 1.0],
-  pushed_bias: [0.0, 1.0],
   call_response: [0.0, 1.0],
   bpm: [40.0, 160.0],
   breath_mean_s: BREATH_CLAMP_S,
@@ -79,8 +77,8 @@ export const NUMERIC_PARAMS = {
 // them, so the breath panel owns only spread and inhale -- two controls writing
 // one value would make it ambiguous which one won.
 export const MOOD_WEIGHTS = ["notes_per_breath", "step_leap_ratio",
-  "ornament_rate", "cadence_strength", "register_bias", "sweep_depth",
-  "pushed_bias", "call_response", "bpm", "breath_mean_s"];
+  "ornament_rate", "cadence_strength", "register_bias",
+  "call_response", "bpm", "breath_mean_s"];
 
 // The parameters the head row gives their own control -- a menu, a text box, a
 // stepper. Some are numeric all the same: `lead_octave` has a range like any

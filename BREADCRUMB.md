@@ -17,7 +17,7 @@ all 144 key/scale combinations is 100 cents, asserted by `check.mjs`.
 The engine was **ported from Python to JavaScript** and the Python one
 retired, so there is still exactly one engine. The port is faithful: over
 2400 breaths per mood the two agree on notes-per-breath, breath length, grace
-count, register span, layer mix and call/answer ratio to within a few percent.
+count, register span and call/answer ratio to within a few percent.
 It is not bit-identical and cannot be — the PRNG differs — so old Python seeds
 do not carry over.
 

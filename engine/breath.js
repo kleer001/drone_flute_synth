@@ -20,10 +20,13 @@ import { round } from "./rng.js";
 export const BREATH_CLAMP_S = [3.0, 14.0];
 export const INHALE_CLAMP_S = [0.3, 1.6];
 
-// Breath layers as a 0-127 velocity. A layer is how hard the player blows,
-// which reads as loudness rather than as a different voice, so it is one number
-// scaling the note's gain and not a second set of samples.
-export const LAYER_VELOCITY = { soft: 52, normal: 84, pushed: 116 };
+// One blowing pressure, every breath. This player is an ideal one: it does not
+// lean on a phrase or run out of air, so nothing here varies how hard it blows.
+// A real duct flute could not vary it much anyway -- the windway is fixed, so
+// air speed sets pitch and loudness together and a louder note is a sharper
+// one. Modelling that faithfully would mean detuning to get louder, which is
+// the opposite of what this instrument is for.
+export const VELOCITY = 84;
 
 // The shape of the breath itself: how long the tone takes to arrive after the
 // player starts blowing, and to fall away when they stop. Every note in a
@@ -60,13 +63,11 @@ export class Meter {
 }
 
 export class Breath {
-  constructor(index, lengthS, inhaleS, bars, layer, droneNotes, melodyNotes,
-              role) {
+  constructor(index, lengthS, inhaleS, bars, droneNotes, melodyNotes, role) {
     this.index = index;
     this.lengthS = lengthS;
     this.inhaleS = inhaleS;
     this.bars = bars;
-    this.layer = layer;
     this.droneNotes = droneNotes;
     this.melodyNotes = melodyNotes;
     this.role = role;
@@ -135,11 +136,6 @@ export class Performer {
     }
   }
 
-  _chooseLayer() {
-    if (this.rng.random() < this.mood.pushed_bias) return "pushed";
-    return this.rng.random() < 0.35 ? "soft" : "normal";
-  }
-
   /* Fit one breath cycle to whole bars, in beats.
    *
    * The cycle -- sounding plus inhale -- is a whole number of bars, so the next
@@ -163,22 +159,20 @@ export class Performer {
     const [length, inhale, bars] = this._snap(meter,
       clamp(this.rng.gauss(this.mood.breath_mean_s, this.breathSpreadS), BREATH_CLAMP_S),
       clamp(this.rng.gauss(this.inhaleS, 0.2), INHALE_CLAMP_S));
-    const layer = this._chooseLayer();
 
     // Redraw rather than mutate: mutating a phrase to force a difference would
     // bias the note distribution in a way that is hard to reason about.
     // Redrawing keeps the walk's statistics intact.
     let notes, sequence;
     for (let i = 0; i < 8; i++) {
-      notes = this.phrasing.breath(this.mood, meter, length,
-                                   LAYER_VELOCITY[layer]);
+      notes = this.phrasing.breath(this.mood, meter, length, VELOCITY);
       sequence = noteSequence(notes);
       if (sequence !== this._lastSequence) break;
     }
     this._lastSequence = sequence;
 
     this._index += 1;
-    return new Breath(this._index, length, inhale, bars, layer,
+    return new Breath(this._index, length, inhale, bars,
                       this.droneNotes, notes,
                       this.phrasing.lastRole);   // call or answer, for display
   }

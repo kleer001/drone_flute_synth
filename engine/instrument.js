@@ -4,7 +4,7 @@
  * set at once, and hands out one breath at a time. It knows nothing about Web
  * Audio: a breath is data, and turning it into sound is the page's job.
  */
-import { Performer, LAYER_VELOCITY, BREATH_ATTACK_S,
+import { Performer, VELOCITY, BREATH_ATTACK_S,
          BREATH_RELEASE_S } from "./breath.js";
 import { Rng } from "./rng.js";
 import { SampleSet } from "./samples.js";
@@ -158,10 +158,9 @@ export class Instrument {
       length_s: plan.lengthS,
       inhale_s: plan.inhaleS,
       bars: plan.bars,
-      layer: plan.layer,
       role: plan.role,
       drones: plan.droneNotes.slice(),
-      drone_velocity: LAYER_VELOCITY[plan.layer],
+      drone_velocity: VELOCITY,
       notes: plan.melodyNotes.map((n) => ({
         name: n.name, start_s: n.startS, dur_s: n.durS,
         velocity: n.velocity, grace: n.isGrace })),
