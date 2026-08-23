@@ -289,6 +289,9 @@ async function start() {
       key: url.get("key") || "C",
       mode: url.get("mode") || "minor",
       seed: Number(url.get("seed")) || Math.floor(Math.random() * 2 ** 31),
+      song: url.get("song") === "1",
+      songBlocks: Number(url.get("blocks")) || 3,
+      songRepeats: Number(url.get("repeats")) || 2,
     });
     inst = engine.describe();
     await loadBuffers();
@@ -431,6 +434,13 @@ function describe() {
     $("octave-row").insertBefore(
       stepper((by) => nudge(working, "lead_octave", by, inst.ranges.lead_octave)),
       $("lead_octave"));
+    $("song").addEventListener("change", () => {
+      working.song = $("song").checked; renderParams();
+    });
+    for (const name of ["song_blocks", "song_repeats"]) {
+      $(`${name}-row`).insertBefore(
+        stepper((by) => nudge(working, name, by, inst.ranges[name])), $(name));
+    }
     for (let i = 0; i < inst.drone_slots; i++) {
       $("drones").appendChild(droneRow(i));
     }
@@ -478,6 +488,12 @@ function renderParams() {
     oct > 0 ? `+${oct}` : String(oct).replace("-", "\u2212");
   ends($("octave-row"), oct, inst.ranges.lead_octave);
   if (document.activeElement !== $("seed")) $("seed").value = working.seed;
+  $("song").checked = working.song === true;
+  for (const name of ["song_blocks", "song_repeats"]) {
+    $(name).textContent = String(working[name]);
+    ends($(`${name}-row`), working[name], inst.ranges[name]);
+    $(`${name}-row`).classList.toggle("off", !working.song);
+  }
   const dronesDirty = isDirty("drones");
   for (const row of document.querySelectorAll("[data-drone]")) {
     const slot = working.drones[row.dataset.drone];

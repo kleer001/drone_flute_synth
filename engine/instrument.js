@@ -23,12 +23,16 @@ const VOICE_GAIN = { drone: 0.85, lead: 1.0 };
  * arbitrary; all it has to do is be one, so that the two streams are
  * reproducible from the same seed without ever being the same stream. */
 const STRIKE_SEED_OFFSET = 0x5f356495;
+// Likewise for the song arrangement, so toggling song mode does not change
+// what the breaths themselves are.
+const SONG_SEED_OFFSET = 0x2545f491;
 
 export class Instrument {
   /* `manifest` is what `samples.parseManifest` returned: the loops, and the
      percussion pools if any have been authored. */
   constructor(manifest, { mood = "contemplative", seed = 1,
-                          key = "C", mode = "minor" } = {}) {
+                          key = "C", mode = "minor",
+                          song = false, songBlocks = 3, songRepeats = 2 } = {}) {
     this.loopDir = manifest.loops.dir;
     this.percussion = manifest.percussion ?? {};
     this.samples = new SampleSet(manifest.loops.files, INSTRUMENT.soundingOffset);
@@ -46,6 +50,9 @@ export class Instrument {
       seed: Math.trunc(seed),
       key, mode,
       lead_octave: 0,
+      song: song === true,
+      song_blocks: Math.trunc(songBlocks),
+      song_repeats: Math.trunc(songRepeats),
       drones: moods.defaultDrones(),
       breath_spread_s: INSTRUMENT.breathSpreadS,
       inhale_s: INSTRUMENT.inhaleS,
@@ -132,14 +139,22 @@ export class Instrument {
       // A new seed means "play something else", and that has to include which
       // recordings the percussion reaches for.
       this._strikes = new Rng(Math.trunc(p.seed) ^ STRIKE_SEED_OFFSET);
+      this._songRng = new Rng(Math.trunc(p.seed) ^ SONG_SEED_OFFSET);
       this.performer = new Performer(
         INSTRUMENT, mood, new Rng(Math.trunc(p.seed)),
-        lead, drones, root, p.breath_spread_s, p.inhale_s);
+        lead, drones, root, p.breath_spread_s, p.inhale_s, this._song());
     } else {
       this.performer.retune({
         mood, root, leadNotes: lead, droneNotes: drones,
-        breathSpreadS: p.breath_spread_s, inhaleS: p.inhale_s });
+        breathSpreadS: p.breath_spread_s, inhaleS: p.inhale_s,
+        song: this._song() });
     }
+  }
+
+  _song() {
+    const p = this.params;
+    return { on: p.song === true, blocks: Math.trunc(p.song_blocks),
+             repeats: Math.trunc(p.song_repeats), rng: this._songRng };
   }
 
   /* Apply a partial parameter change. Throws on a bad set, changing nothing. */

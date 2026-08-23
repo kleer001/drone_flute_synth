@@ -16,6 +16,7 @@
 import { Phrasing, stability } from "./melody.js";
 import { midiOf } from "./scales.js";
 import { round } from "./rng.js";
+import { arrange, blockLabel, BLOCK_BREATHS } from "./song.js";
 
 export const BREATH_CLAMP_S = [3.0, 14.0];
 export const INHALE_CLAMP_S = [0.3, 1.6];
@@ -84,12 +85,16 @@ export const noteSequence = (notes) =>
 /* Plans breaths. Holds no audio state; the page turns plans into sound. */
 export class Performer {
   constructor(profile, mood, rng, leadNotes, droneNotes, root,
-              breathSpreadS, inhaleS) {
+              breathSpreadS, inhaleS, song = null) {
     this.profile = profile;
     this.mood = mood;
     this.rng = rng;
     this.breathSpreadS = breathSpreadS;
     this.inhaleS = inhaleS;
+    // {on, blocks, repeats, rng}. A block is a call and its answer, so the
+    // shuffle moves pairs and an answer never leaves its call.
+    this.song = song;
+    this._queue = [];
     this.droneNotes = droneNotes.slice();
     this._setNotes(leadNotes, root);
     // The motif lives here rather than in a single breath: restating it across
@@ -120,7 +125,11 @@ export class Performer {
    * Rebuilding would hand back a Performer seeded afresh: the random stream
    * would replay from the top, the motif under development would be discarded
    * and the breath count would restart. */
-  retune({ mood, root, leadNotes, droneNotes, breathSpreadS, inhaleS } = {}) {
+  retune({ mood, root, leadNotes, droneNotes, breathSpreadS, inhaleS,
+           song } = {}) {
+    // A queued section holds note names from the old settings.
+    this._queue = [];
+    if (song != null) this.song = song;
     if (mood != null) this.mood = mood;
     if (breathSpreadS != null) this.breathSpreadS = breathSpreadS;
     if (inhaleS != null) this.inhaleS = inhaleS;
@@ -152,8 +161,40 @@ export class Performer {
             measures];
   }
 
-  /* Plan one breath. Never repeats the previous note sequence. */
+  /* One breath. In song mode it comes from the current section; otherwise it
+     is planned fresh. */
   nextBreath() {
+    if (!this.song?.on) return this._stamp(this._plan(), null);
+    if (!this._queue.length) this._buildSection();
+    const { plan, label } = this._queue.shift();
+    return this._stamp(plan, label);
+  }
+
+  _stamp(plan, label) {
+    this._index += 1;
+    return new Breath(this._index, plan.lengthS, plan.inhaleS, plan.bars,
+                      plan.droneNotes, plan.melodyNotes,
+                      label === null ? plan.role : `${label} ${plan.role}`);
+  }
+
+  /* Generate `blocks` call/answer pairs, then queue them in an order where no
+     block follows itself. Roles alternate from "call", and a section is always
+     an even number of breaths, so every pair comes out call-then-answer. */
+  _buildSection() {
+    const { blocks, repeats, rng } = this.song;
+    const pairs = [];
+    for (let b = 0; b < blocks; b++) {
+      const pair = [];
+      for (let k = 0; k < BLOCK_BREATHS; k++) pair.push(this._plan());
+      pairs.push(pair);
+    }
+    for (const b of arrange(blocks, repeats, rng)) {
+      for (const plan of pairs[b]) this._queue.push({ plan, label: blockLabel(b) });
+    }
+  }
+
+  /* Plan one breath. Never repeats the previous note sequence. */
+  _plan() {
     // Invariant for the whole breath, and the getter rebuilds it on each read.
     const meter = this.meter;
     const [length, inhale, bars] = this._snap(meter,
@@ -170,10 +211,7 @@ export class Performer {
       if (sequence !== this._lastSequence) break;
     }
     this._lastSequence = sequence;
-
-    this._index += 1;
-    return new Breath(this._index, length, inhale, bars,
-                      this.droneNotes, notes,
-                      this.phrasing.lastRole);   // call or answer, for display
+    return new Breath(0, length, inhale, bars, this.droneNotes, notes,
+                      this.phrasing.lastRole);
   }
 }

@@ -71,6 +71,8 @@ export const NUMERIC_PARAMS = {
   // roomier than up: the recordings are a soprano recorder, so lifting them an
   // octave gets shrill fast while dropping them just sounds like a bigger pipe.
   lead_octave: [-2, 1],
+  song_blocks: [2, 6],
+  song_repeats: [1, 4],
 };
 
 // What counts as the mood, in its order. `breath_mean_s` and `bpm` are among
@@ -83,7 +85,8 @@ export const MOOD_WEIGHTS = ["notes_per_breath", "step_leap_ratio",
 // The parameters the head row gives their own control -- a menu, a text box, a
 // stepper. Some are numeric all the same: `lead_octave` has a range like any
 // weight, it just reads better as a nudge than as a slider with four stops.
-export const CHOICE_PARAMS = ["mood", "key", "mode", "seed", "lead_octave"];
+export const CHOICE_PARAMS = ["mood", "key", "mode", "seed", "lead_octave",
+                              "song", "song_blocks", "song_repeats"];
 
 // The numeric parameters left over: not a mood weight, not on a menu. Derived
 // rather than restated, so a new parameter cannot go missing from the page --
@@ -167,6 +170,9 @@ export function validateParams(params) {
 
   if (!Number.isFinite(Number(params.seed))) {
     errors.seed = "must be a whole number";
+  }
+  if (typeof params.song !== "boolean") {
+    errors.song = "must be true or false";
   }
   return errors;
 }

@@ -16,6 +16,7 @@ import { Instrument } from "./engine/instrument.js";
 import { noteSequence } from "./engine/breath.js";
 import { rasterize, MIN_ONSET_GAP_S } from "./engine/melody.js";
 import { LOOP_SUFFIX, parseManifest } from "./engine/samples.js";
+import { BLOCK_BREATHS } from "./engine/song.js";
 import { Rng } from "./engine/rng.js";
 import * as scales from "./engine/scales.js";
 
@@ -345,6 +346,85 @@ if (!pools.length) {
                              : "strikes did not reproduce from the seed";
     failures.push(`streams: ${why}`);
     console.log(`FAIL  streams: ${why}`);
+  }
+}
+
+// ---- song mode ---------------------------------------------------------
+{
+  const BLOCKS = 3, REPEATS = 2, SECTIONS = 4;
+  const section = BLOCKS * REPEATS * BLOCK_BREATHS;
+  const play = (seed) => {
+    const inst = new Instrument(manifest, { mood, seed, key, mode });
+    inst.update({ song: true, song_blocks: BLOCKS, song_repeats: REPEATS });
+    const out = [];
+    for (let i = 0; i < section * SECTIONS; i++) {
+      const b = inst.nextBreath();
+      const [label, role] = b.role.split(" ");
+      out.push({ label, role, seq: noteSequence(b.notes),
+                 len: b.length_s, bars: b.bars });
+    }
+    return out;
+  };
+  const song = play(2718), again = play(2718), other = play(1618);
+  const bad = [];
+
+  // A block repeats verbatim, or it is not a repeat. Labels restart each
+  // section, so the key has to carry which section it belongs to.
+  const byBlock = new Map();
+  song.forEach((b, i) => {
+    const k = `s${Math.floor(i / section)}|${b.label}|${i % BLOCK_BREATHS}`;
+    if (!byBlock.has(k)) byBlock.set(k, new Set());
+    byBlock.get(k).add(`${b.seq}|${b.len}|${b.bars}`);
+  });
+  for (const [k, v] of byBlock) if (v.size > 1) bad.push(`${k} varies across repeats`);
+
+  // The pair holds together: every block plays call then answer.
+  song.forEach((b, i) => {
+    const want = i % BLOCK_BREATHS === 0 ? "call" : "answer";
+    if (!b.role.startsWith(want)) bad.push(`breath ${i} is ${b.role}, expected ${want}`);
+  });
+
+  // No block follows itself, and each appears exactly `repeats` times.
+  for (let s0 = 0; s0 < SECTIONS; s0++) {
+    const blocks = song.slice(s0 * section, (s0 + 1) * section)
+                       .filter((_, i) => i % BLOCK_BREATHS === 0).map((b) => b.label);
+    for (let i = 1; i < blocks.length; i++) {
+      if (blocks[i] === blocks[i - 1]) bad.push(`section ${s0}: ${blocks[i]} follows itself`);
+    }
+    const tally = {};
+    for (const b of blocks) tally[b] = (tally[b] ?? 0) + 1;
+    const counts = Object.values(tally);
+    if (counts.length !== BLOCKS || counts.some((c) => c !== REPEATS)) {
+      bad.push(`section ${s0}: ${JSON.stringify(tally)}, wanted ${BLOCKS}x${REPEATS}`);
+    }
+  }
+
+  // Sections are new material, not the same three blocks relabelled.
+  const firstTwo = [0, 1].map((s0) =>
+    song.slice(s0 * section, (s0 + 1) * section).map((b) => b.seq).sort().join("|"));
+  if (firstTwo[0] === firstTwo[1]) bad.push("section 1 reused section 0's material");
+
+  // Criterion 6 has to survive: repeating pairs must not put two identical
+  // breaths side by side.
+  for (let i = 1; i < song.length; i++) {
+    if (song[i].seq === song[i - 1].seq) bad.push(`breaths ${i - 1},${i} identical`);
+  }
+
+  const key6 = (s0) => s0.map((b) => `${b.label}${b.role}${b.seq}`).join("|");
+  if (key6(song) !== key6(again)) bad.push("same seed produced a different song");
+  if (key6(song) === key6(other)) bad.push("a different seed produced the same song");
+
+  if (!bad.length) {
+    const forms = [];
+    for (let s0 = 0; s0 < SECTIONS; s0++) {
+      forms.push(song.slice(s0 * section, (s0 + 1) * section)
+                     .filter((_, i) => i % BLOCK_BREATHS === 0).map((b) => b.label).join(""));
+    }
+    console.log(`PASS  song: ${SECTIONS} sections of ${section} breaths ` +
+                `(${forms.join(" ")}), pairs intact, repeats verbatim, no block twice running`);
+  } else {
+    failures.push(`song: ${bad[0]}`);
+    console.log(`FAIL  song: ${bad[0]}`);
   }
 }
 
