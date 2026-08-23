@@ -211,7 +211,6 @@ export class StrokeSet {
     }
     this.strokes = [...this._byStroke.keys()].sort();
     this._gain = this._level(loudness, strokeOf);
-    this._last = new Map();              // stroke|level -> the last path used
   }
 
   /* A playback gain per recording, bringing every recording of one stroke to
@@ -291,6 +290,12 @@ export class StrokeSet {
 
   /* One recording of `stroke` at `velocity` (0-127), as {path, level, gain}.
    *
+   * `last` is the path this caller used for this stroke previously. It is
+   * passed in rather than remembered here because a pool is shared by every
+   * performance built from one manifest, and where a round robin has got to is
+   * a fact about a performance -- kept here, two players would deal each other
+   * their takes and a seed would stop naming one performance.
+   *
    * The layer is found by spreading the recorded layers evenly across the
    * velocity range rather than by reading the numbers VCSL used: the frame
    * drum has layers 2 and 3 and no layer 1, so anything keyed on the recorded
@@ -302,17 +307,14 @@ export class StrokeSet {
    * recordings that is strict alternation; where it holds more it is a walk
    * that never repeats itself immediately.
    */
-  pick(stroke, velocity, rng) {
+  pick(stroke, velocity, rng, last = null) {
     const layers = this.levels(stroke);
     const v = Math.max(0, Math.min(127, Number(velocity)));
     if (!Number.isFinite(v)) throw new Error(`velocity ${velocity} is not a number`);
     const level = layers[round((v / 127) * (layers.length - 1))];
     const paths = this._byStroke.get(stroke).get(level);
-    const key = `${stroke}|${level}`;
-    const last = this._last.get(key);
     const choices = paths.length > 1 ? paths.filter((p) => p !== last) : paths;
     const path = rng.choice(choices);
-    this._last.set(key, path);
     return { path, stroke, level, gain: this.gainFor(path) };
   }
 

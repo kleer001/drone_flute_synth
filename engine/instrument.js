@@ -11,6 +11,7 @@ import { SampleSet } from "./samples.js";
 import { INSTRUMENT } from "./profile.js";
 import * as moods from "./moods.js";
 import * as scales from "./scales.js";
+import { rhythm, cycleUnits, DRUM_POOL, RATTLE_POOL } from "./percussion.js";
 
 // The drone sits under the lead rather than beside it.
 const VOICE_GAIN = { drone: 0.85, lead: 1.0 };
@@ -32,7 +33,8 @@ export class Instrument {
      percussion pools if any have been authored. */
   constructor(manifest, { mood = "contemplative", seed = 1,
                           key = "C", mode = "minor",
-                          song = false, songBlocks = 3, songRepeats = 2 } = {}) {
+                          song = false, songBlocks = 3, songRepeats = 2,
+                          drum = false, rattle = false } = {}) {
     this.loopDir = manifest.loops.dir;
     this.percussion = manifest.percussion ?? {};
     this.samples = new SampleSet(manifest.loops.files, INSTRUMENT.soundingOffset);
@@ -53,6 +55,10 @@ export class Instrument {
       song: song === true,
       song_blocks: Math.trunc(songBlocks),
       song_repeats: Math.trunc(songRepeats),
+      drum: drum === true,
+      rattle: rattle === true,
+      drum_density: 0.4,
+      rattle_scale: 2,
       drones: moods.defaultDrones(),
       breath_spread_s: INSTRUMENT.breathSpreadS,
       inhale_s: INSTRUMENT.inhaleS,
@@ -88,10 +94,17 @@ export class Instrument {
     return [...new Set(Object.values(this.voices).map((v) => v.file))];
   }
 
-  /* Every percussion file, across every pool. */
+  /* The pools the rhythm layers can reach for. */
+  get pools() {
+    return { drum: DRUM_POOL, rattle: RATTLE_POOL };
+  }
+
+  /* Every file the rhythm layers can reach, so the page loads only those. */
   strokeFiles() {
     const out = new Set();
-    for (const pool of Object.values(this.percussion)) {
+    for (const name of Object.values(this.pools)) {
+      const pool = this.percussion[name];
+      if (!pool) continue;
       for (const f of pool.files()) out.add(f);
     }
     return [...out].sort();
@@ -108,7 +121,10 @@ export class Instrument {
       const have = Object.keys(this.percussion).sort().join(", ") || "none";
       throw new Error(`no percussion pool ${pool}; have ${have}`);
     }
-    return set.pick(stroke, velocity, this._strikes);
+    const key = `${pool}|${stroke}`;
+    const hit = set.pick(stroke, velocity, this._strikes, this._lastTake.get(key));
+    this._lastTake.set(key, hit.path);
+    return hit;
   }
 
   /* [lead note names, drone note names, tonic] for the current key and mode. */
@@ -140,6 +156,8 @@ export class Instrument {
       // recordings the percussion reaches for.
       this._strikes = new Rng(Math.trunc(p.seed) ^ STRIKE_SEED_OFFSET);
       this._songRng = new Rng(Math.trunc(p.seed) ^ SONG_SEED_OFFSET);
+      this._clock = 0;
+      this._lastTake = new Map();
       this.performer = new Performer(
         INSTRUMENT, mood, new Rng(Math.trunc(p.seed)),
         lead, drones, root, p.breath_spread_s, p.inhale_s, this._song());
@@ -188,6 +206,8 @@ export class Instrument {
       ranges: moods.NUMERIC_PARAMS,
       mood_weights: moods.MOOD_WEIGHTS,
       breath_fields: moods.BREATH_FIELDS,
+      rhythm_fields: moods.RHYTHM_FIELDS,
+      pools: this.pools,
       moods: Object.keys(moods.MOODS).sort(),
       preset_weights: moods.presetWeights(),
       keys: scales.NOTE_NAMES,
@@ -214,6 +234,16 @@ export class Instrument {
      different breaths, which is what an endless performance means. */
   nextBreath() {
     const plan = this.performer.nextBreath();
+    const p = this.params;
+    const meter = this.performer.meter;
+    const layers = rhythm({
+      motif: plan.motif, notes: plan.melodyNotes, meter,
+      lengthS: plan.lengthS, inhaleS: plan.inhaleS, clock: this._clock,
+      drum: p.drum === true && !!this.percussion[DRUM_POOL],
+      rattle: p.rattle === true && !!this.percussion[RATTLE_POOL],
+      drumDensity: Number(p.drum_density), rattleScale: Math.trunc(p.rattle_scale),
+    });
+    this._clock += cycleUnits(meter, plan.lengthS, plan.inhaleS);
     return {
       index: plan.index,
       length_s: plan.lengthS,
@@ -225,6 +255,19 @@ export class Instrument {
       notes: plan.melodyNotes.map((n) => ({
         name: n.name, start_s: n.startS, dur_s: n.durS,
         velocity: n.velocity, grace: n.isGrace })),
+      // The pattern is decided here; which recording sounds it is drawn from
+      // the strike stream, so a repeated block drums the same figure without
+      // playing the same takes.
+      pulses: {
+        drum: layers.drum.map((h) => this._voiceStrike(DRUM_POOL, h)),
+        rattle: layers.rattle.map((h) => this._voiceStrike(RATTLE_POOL, h)),
+      },
     };
+  }
+
+  _voiceStrike(pool, hit) {
+    const { path, gain } = this.strike(pool, hit.stroke, hit.velocity);
+    return { start_s: hit.startS, stroke: hit.stroke,
+             velocity: hit.velocity, file: path, gain };
   }
 }

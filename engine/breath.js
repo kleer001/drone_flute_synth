@@ -64,7 +64,8 @@ export class Meter {
 }
 
 export class Breath {
-  constructor(index, lengthS, inhaleS, bars, droneNotes, melodyNotes, role) {
+  constructor(index, lengthS, inhaleS, bars, droneNotes, melodyNotes, role,
+              motif) {
     this.index = index;
     this.lengthS = lengthS;
     this.inhaleS = inhaleS;
@@ -72,6 +73,9 @@ export class Breath {
     this.droneNotes = droneNotes;
     this.melodyNotes = melodyNotes;
     this.role = role;
+    // The cell under development, carried so the rhythm layers derive from
+    // the same material as the tune -- and so a replayed block keeps its own.
+    this.motif = motif;
   }
 }
 
@@ -174,7 +178,8 @@ export class Performer {
     this._index += 1;
     return new Breath(this._index, plan.lengthS, plan.inhaleS, plan.bars,
                       plan.droneNotes, plan.melodyNotes,
-                      label === null ? plan.role : `${label} ${plan.role}`);
+                      label === null ? plan.role : `${label} ${plan.role}`,
+                      plan.motif);
   }
 
   /* Generate `blocks` call/answer pairs, then queue them in an order where no
@@ -212,6 +217,7 @@ export class Performer {
     }
     this._lastSequence = sequence;
     return new Breath(0, length, inhale, bars, this.droneNotes, notes,
-                      this.phrasing.lastRole);
+                      this.phrasing.lastRole,
+                      this.phrasing.motif.map((m) => m.slice()));
   }
 }

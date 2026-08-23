@@ -73,6 +73,8 @@ export const NUMERIC_PARAMS = {
   lead_octave: [-2, 1],
   song_blocks: [2, 6],
   song_repeats: [1, 4],
+  drum_density: [0.0, 1.0],
+  rattle_scale: [1, 4],
 };
 
 // What counts as the mood, in its order. `breath_mean_s` and `bpm` are among
@@ -86,14 +88,19 @@ export const MOOD_WEIGHTS = ["notes_per_breath", "step_leap_ratio",
 // stepper. Some are numeric all the same: `lead_octave` has a range like any
 // weight, it just reads better as a nudge than as a slider with four stops.
 export const CHOICE_PARAMS = ["mood", "key", "mode", "seed", "lead_octave",
-                              "song", "song_blocks", "song_repeats"];
+                              "song", "song_blocks", "song_repeats",
+                              "drum", "rattle"];
+
+// Numeric, but rendered in their own group rather than with the breath fields.
+export const RHYTHM_FIELDS = ["drum_density", "rattle_scale"];
 
 // The numeric parameters left over: not a mood weight, not on a menu. Derived
 // rather than restated, so a new parameter cannot go missing from the page --
 // but it does mean a numeric parameter belongs on a menu or in this block, and
 // nowhere else.
 export const BREATH_FIELDS = Object.keys(NUMERIC_PARAMS).filter(
-  (k) => !MOOD_WEIGHTS.includes(k) && !CHOICE_PARAMS.includes(k));
+  (k) => !MOOD_WEIGHTS.includes(k) && !CHOICE_PARAMS.includes(k)
+      && !RHYTHM_FIELDS.includes(k));
 
 // Three drone voices, each an optional semitone offset from the tonic. Two
 // octaves either way is deliberately wide: a drone far below the lead is the
@@ -171,8 +178,8 @@ export function validateParams(params) {
   if (!Number.isFinite(Number(params.seed))) {
     errors.seed = "must be a whole number";
   }
-  if (typeof params.song !== "boolean") {
-    errors.song = "must be true or false";
+  for (const flag of ["song", "drum", "rattle"]) {
+    if (typeof params[flag] !== "boolean") errors[flag] = "must be true or false";
   }
   return errors;
 }

@@ -50,6 +50,15 @@
       <div class="param" id="song_repeats-row"><label>repeats each</label>
         <output id="song_repeats"></output></div>
     </div>
+    <div class="rows" id="rhythm-rows">
+      <div class="param" id="drum-row">
+        <label><input type="checkbox" id="drum" class="on"> frame drum</label>
+        <output></output></div>
+      <div class="param" id="rattle-row">
+        <label><input type="checkbox" id="rattle" class="on"> rattle</label>
+        <output></output></div>
+    </div>
+    <div class="rows" id="rhythm"></div>
     <div class="rows" id="drones"></div>
     <div class="rows" id="weights"></div>
     <div class="rows" id="breath"></div>
@@ -80,6 +89,9 @@
       <div class="param"><label for="tone">tone</label>
         <input type="range" id="tone" min="800" max="18000" step="100">
         <output id="tone-out"></output></div>
+      <div class="param"><label for="perc">percussion</label>
+        <input type="range" id="perc" min="0" max="0.6" step="0.01" value="0.15">
+        <output id="perc-out"></output></div>
       <div class="param"><label for="master">level</label>
         <input type="range" id="master" min="0" max="1" step="0.01" value="0.8">
         <output id="master-out"></output></div>

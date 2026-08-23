@@ -211,16 +211,17 @@ if (!pools.length) {
     const own = new Set(pool.files());
     for (const stroke of pool.strokes) {
       for (let v = 0; v <= 127; v += 1) {
-        const { path } = pool.pick(stroke, v, new Rng(v + 1));
+        const { path } = pool.pick(stroke, v, new Rng(v + 1), null);
         if (!own.has(path)) unreachable.push(`${name}/${stroke} v${v} -> ${path}`);
       }
     }
   }
-  // What the instrument says it needs and what the pools hold are the same
-  // set, or the page would fetch a file nothing plays -- or miss one it does.
+  // What the page is told to fetch is exactly what the layers can reach for:
+  // the pools named in `pools`, no more (5 MB of unplayed washes) and no less.
   const reachable = probe.strokeFiles().join(" ");
-  const authored = pools.flatMap(([, pool]) => pool.files()).sort().join(" ");
-  if (reachable !== authored) unreachable.push("strokeFiles() disagrees with the pools");
+  const named = Object.values(probe.pools)
+    .flatMap((n) => manifest.percussion[n]?.files() ?? []).sort().join(" ");
+  if (reachable !== named) unreachable.push("strokeFiles() disagrees with the named pools");
 
   if (!unreachable.length) {
     const strokes = pools.reduce((n, [, p]) => n + p.strokes.length, 0);
@@ -237,8 +238,8 @@ if (!pools.length) {
   for (const [name, pool] of pools) {
     for (const stroke of pool.strokes) {
       const layers = pool.levels(stroke);
-      const lo = pool.pick(stroke, 0, new Rng(1)).level;
-      const hi = pool.pick(stroke, 127, new Rng(1)).level;
+      const lo = pool.pick(stroke, 0, new Rng(1), null).level;
+      const hi = pool.pick(stroke, 127, new Rng(1), null).level;
       if (lo !== layers[0] || hi !== layers[layers.length - 1]) {
         unusedLayers.push(`${name}/${stroke}: 0->${lo}, 127->${hi}, have ${layers.join(",")}`);
       }
@@ -299,7 +300,7 @@ if (!pools.length) {
         const v = Math.round((layers.indexOf(level) / Math.max(1, layers.length - 1)) * 127);
         let last = null;
         for (let i = 0; i < 200; i++) {
-          const { path } = pool.pick(stroke, v, rng);
+          const { path } = pool.pick(stroke, v, rng, last);
           if (path === last) { repeated.push(`${name}/${stroke} l${level}`); break; }
           last = path;
         }
@@ -317,30 +318,23 @@ if (!pools.length) {
   // its own stream, so striking must not consume a number the phrase generator
   // was going to use. If this fails, turning a drum on rewrites the melody and
   // a seed no longer names one performance.
-  const [poolName, poolSet] = pools[0];
-  const stroke = poolSet.strokes[0];
-  const plain = new Instrument(manifest, { mood, seed: 31337, key, mode });
-  const struck = new Instrument(manifest, { mood, seed: 31337, key, mode });
-  const quiet = [], loud = [], hits = [];
-  for (let i = 0; i < 40; i++) {
-    quiet.push(noteSequence(plain.nextBreath().notes));
-    const b = struck.nextBreath();
-    // Strike as often as a rhythm layer would, between planning breaths.
-    for (let k = 0; k < 8; k++) hits.push(struck.strike(poolName, stroke, 40 + 8 * k).path);
-    loud.push(noteSequence(b.notes));
-  }
-  const undisturbed = quiet.join("|") === loud.join("|");
-  // and the strikes themselves reproduce from the seed
-  const again = new Instrument(manifest, { mood, seed: 31337, key, mode });
-  const hits2 = [];
-  for (let i = 0; i < 40; i++) {
-    again.nextBreath();
-    for (let k = 0; k < 8; k++) hits2.push(again.strike(poolName, stroke, 40 + 8 * k).path);
-  }
-  const reproducible = hits.join(" ") === hits2.join(" ");
-  if (undisturbed && reproducible) {
-    console.log(`PASS  streams: ${hits.length} strikes changed no note of 40 breaths, ` +
-                `and reproduced from the seed`);
+  const run = (layers) => {
+    const inst = new Instrument(manifest, { mood, seed: 31337, key, mode });
+    if (layers) inst.update({ drum: true, rattle: true });
+    const notes = [], hits = [];
+    for (let i = 0; i < 40; i++) {
+      const b = inst.nextBreath();
+      notes.push(noteSequence(b.notes));
+      for (const l of Object.values(b.pulses)) for (const h of l) hits.push(h.file);
+    }
+    return { notes: notes.join("|"), hits };
+  };
+  const quiet = run(false), loud = run(true), again = run(true);
+  const undisturbed = quiet.notes === loud.notes;
+  const reproducible = loud.hits.join(" ") === again.hits.join(" ");
+  if (undisturbed && reproducible && loud.hits.length > 0) {
+    console.log(`PASS  streams: ${loud.hits.length} strikes over 40 breaths changed no ` +
+                `note, and reproduced from the seed`);
   } else {
     const why = !undisturbed ? "striking altered the melody"
                              : "strikes did not reproduce from the seed";
@@ -425,6 +419,72 @@ if (!pools.length) {
   } else {
     failures.push(`song: ${bad[0]}`);
     console.log(`FAIL  song: ${bad[0]}`);
+  }
+}
+
+// ---- rhythm layers -----------------------------------------------------
+{
+  const inst = new Instrument(manifest, { mood, seed: 808, key, mode });
+  inst.update({ drum: true, rattle: true });
+  const d = inst.describe();
+  const unitS = d.meter.beat_s / 2;
+  const owned = new Set(inst.strokeFiles());
+  const bad = [];
+  let doubled = 0, drumHits = 0, rattleHits = 0, pastInhale = 0, spans = 0;
+
+  for (let i = 0; i < 60; i++) {
+    const b = inst.nextBreath();
+    const onsets = new Set(b.notes.filter((n) => !n.grace)
+      .map((n) => Math.round(n.start_s / unitS)));
+    for (const h of b.pulses.drum) {
+      drumHits++;
+      if (onsets.has(Math.round(h.start_s / unitS))) doubled++;
+      if (!owned.has(h.file)) bad.push(`drum reached ${h.file}, not in strokeFiles()`);
+      if (h.start_s > b.length_s + 1e-9) bad.push(`drum hit past the breath`);
+    }
+    for (const h of b.pulses.rattle) {
+      rattleHits++;
+      if (!owned.has(h.file)) bad.push(`rattle reached ${h.file}, not in strokeFiles()`);
+      // The breath sounds for u0..units-1, so the first inhale unit lands
+      // exactly on length_s.
+      if (h.start_s >= b.length_s - 1e-9) pastInhale++;
+      if (h.start_s > b.length_s + b.inhale_s + 1e-9) bad.push(`rattle hit past the cycle`);
+    }
+    spans++;
+  }
+  if (doubled) bad.push(`${doubled} drum hits doubled a tune onset`);
+  if (!pastInhale) bad.push("the rattle never played through an inhale");
+  if (!drumHits || !rattleHits) bad.push("a layer produced nothing");
+
+  // Song mode: a repeated block drums the same figure, on different takes.
+  const song = new Instrument(manifest, { mood, seed: 808, key, mode });
+  song.update({ song: true, drum: true, rattle: true });
+  const byBlock = new Map();
+  for (let i = 0; i < 12; i++) {
+    const b = song.nextBreath();
+    const k = `${b.role}|${i % 2}`;
+    const figure = b.pulses.drum.map((h) => `${h.start_s.toFixed(4)}${h.stroke}`).join(" ");
+    const takes = b.pulses.drum.map((h) => h.file).join(" ");
+    if (!byBlock.has(k)) byBlock.set(k, []);
+    byBlock.get(k).push({ figure, takes });
+  }
+  let repeatedBlocks = 0, sameTakes = 0;
+  for (const [k, seen] of byBlock) {
+    if (seen.length < 2) continue;
+    repeatedBlocks++;
+    if (seen[0].figure !== seen[1].figure) bad.push(`${k} drummed a different figure on repeat`);
+    if (seen[0].takes && seen[0].takes === seen[1].takes) sameTakes++;
+  }
+  if (!repeatedBlocks) bad.push("no block repeated inside the section");
+
+  if (!bad.length) {
+    console.log(`PASS  rhythm: ${drumHits} drum and ${rattleHits} rattle hits over ${spans} ` +
+                `breaths, 0 doubled the tune, ${pastInhale} rattle hits fell in an inhale`);
+    console.log(`PASS  rhythm/song: ${repeatedBlocks} repeated blocks drummed the same figure, ` +
+                `${repeatedBlocks - sameTakes} of them on different takes`);
+  } else {
+    failures.push(`rhythm: ${bad[0]}`);
+    console.log(`FAIL  rhythm: ${bad[0]}`);
   }
 }
 

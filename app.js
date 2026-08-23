@@ -19,7 +19,8 @@ import { CHOICE_PARAMS } from "./engine/moods.js";
 let ctx = null;
 let engine = null;            // the performance itself
 let inst = null;              // what engine.describe() said
-let loops = {};               // file name -> {buffer, loopStartS, loopEndS}
+let loops = {};               // path -> {buffer, loopStartS, loopEndS}
+let strokes = {};             // path -> AudioBuffer, one-shots
 let running = false;
 let cursor = 0;               // audio-clock time the next breath begins
 let live = new Set();         // sources still sounding, for a clean stop
@@ -39,7 +40,7 @@ const ampFor = (velocity, gain) => Math.pow(velocity / 127, 1.4) * gain;
 
 // the graph, built once
 let master = null, dryGain = null, wetGain = null, convolver = null,
-    preDelay = null, tone = null, limiter = null;
+    preDelay = null, tone = null, limiter = null, percGain = null;
 
 const LABELS = {
   notes_per_breath: "notes / breath", step_leap_ratio: "step : leap",
@@ -48,10 +49,12 @@ const LABELS = {
   call_response: "call / answer", bpm: "tempo",
   breath_mean_s: "breath mean", breath_spread_s: "breath spread",
   inhale_s: "inhale gap",
+  drum_density: "drum fill", rattle_scale: "rattle cycle",
 };
 const DECIMALS = {notes_per_breath: 1, breath_mean_s: 1, breath_spread_s: 1,
-                  inhale_s: 2, bpm: 0};
-const STEPS = {bpm: 1};      // tempo counts whole beats, not half ones
+                  inhale_s: 2, bpm: 0, rattle_scale: 0};
+// Tempo counts whole beats, and the rattle cycle whole augmentations.
+const STEPS = {bpm: 1, rattle_scale: 1};
 
 /* Rooms. These live here rather than in the profile because they are not
    properties of the instrument -- the same flute can be played in any of
@@ -93,8 +96,12 @@ function urlFor(path) {
 
 /* ---------- the audio graph ----------
 
-   voices -> tone -> [ dry --------------------> ] master -> limiter
-                     [ wet -> preDelay -> conv -> ]              -> destination */
+   voices  -> breath env -> tone -> [ dry ------------------> ] master -> limiter
+   strikes -> percGain ----^         [ wet -> preDelay -> conv ]   -> destination
+
+   Percussion joins at the tone stage, not under the breath envelope: it plays
+   through the inhale, which is the point of it. percGain compensates for the
+   pools being normalised near full scale while the loops sit near 0.12. */
 
 function buildGraph() {
   limiter = ctx.createDynamicsCompressor();
@@ -113,6 +120,10 @@ function buildGraph() {
   tone.type = "lowpass";
   tone.frequency.value = parseFloat($("tone").value);
   tone.Q.value = 0.7;
+
+  percGain = ctx.createGain();
+  percGain.gain.value = parseFloat($("perc").value);
+  percGain.connect(tone);
 
   dryGain = ctx.createGain();
   wetGain = ctx.createGain();
@@ -154,17 +165,25 @@ function setWet(v) {
 
 /* ---------- loading ---------- */
 
+async function fetchRaw(path) {
+  const res = await fetch(urlFor(path));
+  if (!res.ok) throw new Error(`${path}: ${res.status}`);
+  return res.arrayBuffer();
+}
+
 async function loadBuffers() {
-  const paths = engine.loopFiles();
-  await Promise.all(paths.map(async (path) => {
-    const res = await fetch(urlFor(path));
-    if (!res.ok) throw new Error(`${path}: ${res.status}`);
-    const raw = await res.arrayBuffer();
-    // Read the loop points BEFORE decoding: decodeAudioData detaches the
-    // buffer, and it discards the smpl chunk they live in either way.
-    const points = readLoopPoints(raw, path);
-    loops[path] = { ...points, buffer: await ctx.decodeAudioData(raw) };
-  }));
+  await Promise.all([
+    ...engine.loopFiles().map(async (path) => {
+      const raw = await fetchRaw(path);
+      // Read the loop points BEFORE decoding: decodeAudioData detaches the
+      // buffer, and it discards the smpl chunk they live in either way.
+      const points = readLoopPoints(raw, path);
+      loops[path] = { ...points, buffer: await ctx.decodeAudioData(raw) };
+    }),
+    ...engine.strokeFiles().map(async (path) => {
+      strokes[path] = await ctx.decodeAudioData(await fetchRaw(path));
+    }),
+  ]);
 }
 
 /* ---------- playing one note ---------- */
@@ -200,6 +219,21 @@ function voice(spec, at, dur, velocity, dest) {
   source(spec, at, at + dur + 0.02).connect(g).connect(dest);
 }
 
+/* One strike. `gain` is the pool's levelling gain, so every recording of a
+   stroke arrives at the same loudness and velocity alone shapes the rest. */
+function strike(hit, at) {
+  const buffer = strokes[hit.file];
+  if (!buffer) throw new Error(`no buffer for ${hit.file}`);
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  const g = ctx.createGain();
+  g.gain.value = ampFor(hit.velocity, hit.gain);
+  src.connect(g).connect(percGain);
+  src.start(at);
+  live.add(src);
+  src.onended = () => live.delete(src);
+}
+
 /* ---------- playing one breath ---------- */
 
 function scheduleBreath(b) {
@@ -232,6 +266,12 @@ function scheduleBreath(b) {
     const dur = Math.min(n.dur_s, b.length_s - n.start_s);
     if (dur <= 0.005) continue;
     voice(inst.voices[n.name], at, dur, n.velocity, env);
+  }
+
+  // Not under `env`: the rattle runs on through the inhale, and the drum is
+  // answering the tune rather than riding its breath.
+  for (const layer of Object.values(b.pulses)) {
+    for (const hit of layer) strike(hit, t0 + hit.start_s);
   }
 
   cursor = t0 + b.length_s + b.inhale_s;
@@ -292,6 +332,8 @@ async function start() {
       song: url.get("song") === "1",
       songBlocks: Number(url.get("blocks")) || 3,
       songRepeats: Number(url.get("repeats")) || 2,
+      drum: url.get("drum") === "1",
+      rattle: url.get("rattle") === "1",
     });
     inst = engine.describe();
     await loadBuffers();
@@ -441,6 +483,12 @@ function describe() {
       $(`${name}-row`).insertBefore(
         stepper((by) => nudge(working, name, by, inst.ranges[name])), $(name));
     }
+    for (const name of ["drum", "rattle"]) {
+      $(name).addEventListener("change", () => {
+        working[name] = $(name).checked; renderParams();
+      });
+    }
+    for (const name of inst.rhythm_fields) $("rhythm").appendChild(paramRow(name));
     for (let i = 0; i < inst.drone_slots; i++) {
       $("drones").appendChild(droneRow(i));
     }
@@ -489,6 +537,8 @@ function renderParams() {
   ends($("octave-row"), oct, inst.ranges.lead_octave);
   if (document.activeElement !== $("seed")) $("seed").value = working.seed;
   $("song").checked = working.song === true;
+  for (const name of ["drum", "rattle"]) $(name).checked = working[name] === true;
+  $("rhythm").classList.toggle("off", !working.drum && !working.rattle);
   for (const name of ["song_blocks", "song_repeats"]) {
     $(name).textContent = String(working[name]);
     ends($(`${name}-row`), working[name], inst.ranges[name]);
@@ -615,6 +665,9 @@ const bind = (id, fn, fmt, onRelease = false) => {
 };
 bind("master",
      (v) => master.gain.setTargetAtTime(v * MAKEUP, ctx.currentTime, 0.02),
+     (v) => v.toFixed(2));
+bind("perc",
+     (v) => percGain.gain.setTargetAtTime(v, ctx.currentTime, 0.02),
      (v) => v.toFixed(2));
 bind("wet", (v) => setWet(v), (v) => v.toFixed(2));
 // Only on release: makeImpulse fills sampleRate * seconds random samples, so
