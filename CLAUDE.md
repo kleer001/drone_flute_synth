@@ -67,6 +67,11 @@ missing does not error — it plays once and stops. `samples.js` walks the RIFF
 chunk table rather than scanning for the bytes "smpl", which can occur inside
 sample data.
 
+**The voice table is built once and must cover every reachable pitch.** That
+includes octaves the lead can be shifted to, not just the one it starts in — a
+note the table misses comes back `undefined` and reaches an `AudioParam` several
+layers down. `check.mjs` walks all 576 key/scale/octave combinations for this.
+
 **Drones are three optional slots**, each a semitone offset from the tonic, so a
 fifth is +7 in every scale and a drone can sit deliberately outside the one
 being played. They share one gain stage scaled by 1/sqrt(n).
@@ -86,9 +91,12 @@ such constant should be in one file.
 its range in `moods.NUMERIC_PARAMS` and, if the mood owns it, its name in
 `moods.MOOD_WEIGHTS`; `BREATH_FIELDS` is then computed as the difference, and
 the page builds its row from `describe()`. Only a menu-valued parameter needs a
-fifth edit (`moods.CHOICE_PARAMS` and its markup in `index.html`). Give it a
-default in the `Instrument` constructor or `update()` will reject it forever as
-"must be a number".
+fifth edit (`moods.CHOICE_PARAMS` and its markup in `index.html`) — and note
+that `CHOICE_PARAMS` is subtracted from `BREATH_FIELDS`, so a numeric parameter
+on a menu does not also appear as a slider. `lead_octave` is the worked example:
+numeric, ranged, validated like any weight, rendered as four named choices.
+Give any new parameter a default in the `Instrument` constructor or `update()`
+will reject it forever as "must be a number".
 
 ## Verification
 

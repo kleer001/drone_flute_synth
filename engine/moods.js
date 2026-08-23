@@ -70,6 +70,10 @@ export const NUMERIC_PARAMS = {
   breath_mean_s: BREATH_CLAMP_S,
   breath_spread_s: [0.0, 5.0],
   inhale_s: INHALE_CLAMP_S,
+  // Which octaves the tune plays in, as a shift on the recorded span. Down is
+  // roomier than up: the recordings are a soprano recorder, so lifting them an
+  // octave gets shrill fast while dropping them just sounds like a bigger pipe.
+  lead_octave: [-2, 1],
 };
 
 // What counts as the mood, in its order. `breath_mean_s` and `bpm` are among
@@ -79,14 +83,17 @@ export const MOOD_WEIGHTS = ["notes_per_breath", "step_leap_ratio",
   "ornament_rate", "cadence_strength", "register_bias", "sweep_depth",
   "pushed_bias", "trill_rate", "call_response", "bpm", "breath_mean_s"];
 
-// The parameters that are not mood weights, derived rather than restated: a
-// hand-written second list is one edit away from a control that never lights up
-// as edited, or a field `update` rejects forever as "must be a number".
-export const BREATH_FIELDS =
-  Object.keys(NUMERIC_PARAMS).filter((k) => !MOOD_WEIGHTS.includes(k));
+// The parameters chosen from a menu rather than dragged on a slider. Some are
+// numeric all the same -- `lead_octave` has a range like any weight, it just
+// reads better as four named choices than as a slider with four stops.
+export const CHOICE_PARAMS = ["mood", "key", "mode", "seed", "lead_octave"];
 
-// The parameters chosen from a menu rather than dragged on a slider.
-export const CHOICE_PARAMS = ["mood", "key", "mode", "seed"];
+// The numeric parameters left over: not a mood weight, not on a menu. Derived
+// rather than restated, so a new parameter cannot go missing from the page --
+// but it does mean a numeric parameter belongs on a menu or in this block, and
+// nowhere else.
+export const BREATH_FIELDS = Object.keys(NUMERIC_PARAMS).filter(
+  (k) => !MOOD_WEIGHTS.includes(k) && !CHOICE_PARAMS.includes(k));
 
 // Three drone voices, each an optional semitone offset from the tonic. Two
 // octaves either way is deliberately wide: a drone far below the lead is the

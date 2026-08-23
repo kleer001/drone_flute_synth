@@ -110,25 +110,34 @@ if (repeats === 0) {
   console.log(`FAIL  criterion 6: ${repeats} consecutive repeats`);
 }
 
-// Every key and scale has to yield a playable list. A mode whose notes fall
-// outside the recorded span would produce a silent lead rather than an error.
-let combos = 0, worst = 0, empty = [];
+// Every key, scale and octave has to yield a playable list, and every note in
+// it has to have a voice. A note the voice table does not cover is not an
+// error -- it is `undefined` reaching an AudioParam several layers down.
+let combos = 0, worstTune = 0, bad = [];
 const probe = new Instrument(files, { mood, seed: 7, key: "C", mode: "minor" });
+const [octLo, octHi] = probe.describe().lead_octaves;
 for (const k of scales.NOTE_NAMES) {
   for (const m of Object.keys(scales.MODES)) {
-    const names = scales.names(k, m, probe.leadLow, probe.leadHigh);
-    if (!names.length) empty.push(`${k} ${m}`);
-    // Read the voice table the page is handed, not the lookup behind it.
-    for (const n of names) worst = Math.max(worst, Math.abs(probe.voices[n].cents));
-    combos++;
+    for (let o = octLo; o <= octHi; o++) {
+      const shift = 12 * o;
+      const names = scales.names(k, m, probe.leadLow + shift, probe.leadHigh + shift);
+      if (!names.length) { bad.push(`${k} ${m} oct ${o} is empty`); continue; }
+      for (const n of names) {
+        // Read the voice table the page is handed, not the lookup behind it.
+        const v = probe.voices[n];
+        if (!v) { bad.push(`${k} ${m} oct ${o}: no voice for ${n}`); continue; }
+        if (o === 0) worstTune = Math.max(worstTune, Math.abs(v.cents));
+      }
+      combos++;
+    }
   }
 }
-if (!empty.length) {
-  console.log(`PASS  coverage: ${combos} key/scale combinations all yield notes, ` +
-              `worst sample shift ${worst.toFixed(0)} cents`);
+if (!bad.length) {
+  console.log(`PASS  coverage: ${combos} key/scale/octave combinations all voiced, ` +
+              `worst shift ${worstTune.toFixed(0)} cents at the recorded octave`);
 } else {
-  failures.push(`coverage: ${empty.length} combinations yield no notes: ${empty.join(", ")}`);
-  console.log(`FAIL  coverage: ${empty.join(", ")}`);
+  failures.push(`coverage: ${bad.length} broken: ${bad.slice(0, 3).join("; ")}`);
+  console.log(`FAIL  coverage: ${bad.slice(0, 3).join("; ")}`);
 }
 
 // A rejected parameter set must change nothing.

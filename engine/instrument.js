@@ -32,6 +32,7 @@ export class Instrument {
       mood: preset.name,
       seed: Math.trunc(seed),
       key, mode,
+      lead_octave: 0,
       drones: moods.defaultDrones(),
       breath_spread_s: INSTRUMENT.breathSpreadS,
       inhale_s: INSTRUMENT.inhaleS,
@@ -47,8 +48,11 @@ export class Instrument {
   _readVoices() {
     const [droneLow, droneHigh] =
       scales.droneSpan(INSTRUMENT.droneOctave, moods.DRONE_SEMITONES);
-    const low = Math.min(this.leadLow, droneLow);
-    const high = Math.max(this.leadHigh, droneHigh);
+    // Voiced once, so the table has to cover every octave the lead can be
+    // shifted to, not just the one it starts in.
+    const [octLo, octHi] = moods.NUMERIC_PARAMS.lead_octave;
+    const low = Math.min(this.leadLow + 12 * octLo, droneLow);
+    const high = Math.max(this.leadHigh + 12 * octHi, droneHigh);
     const out = {};
     for (let m = low; m <= high; m++) {
       const [file, cents] = this.samples.voiceFor(m);
@@ -65,7 +69,9 @@ export class Instrument {
   /* [lead note names, drone note names, tonic] for the current key and mode. */
   _notes() {
     const p = this.params;
-    const lead = scales.names(p.key, p.mode, this.leadLow, this.leadHigh);
+    const shift = 12 * Math.trunc(p.lead_octave);
+    const lead = scales.names(p.key, p.mode,
+                              this.leadLow + shift, this.leadHigh + shift);
     const drones = scales.dronePitches(p.key, INSTRUMENT.droneOctave, p.drones)
                          .map(scales.nameOf);
     // The tonic anchors stability, and it only has to name the right pitch
@@ -130,6 +136,7 @@ export class Instrument {
       preset_weights: moods.presetWeights(),
       keys: scales.NOTE_NAMES,
       modes: Object.keys(scales.MODES),
+      lead_octaves: moods.NUMERIC_PARAMS.lead_octave,
       drone_slots: moods.DRONE_SLOTS,
       drone_semitones: moods.DRONE_SEMITONES,
       meter: { bpm: meter.bpm, beats_per_measure: meter.beatsPerMeasure,
