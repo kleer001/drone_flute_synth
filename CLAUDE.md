@@ -3,8 +3,8 @@
 A lead voice over a drone, playing an endless generative performance in the
 browser. **The whole instrument is a static site at the repo root** — engine
 included — published at https://kleer001.github.io/drone_flute_synth/ by GitHub
-Pages, source `main` / `/`. The page files live beside the tooling deliberately:
-Pages serves the root, so that is where they have to be.
+Pages, source `main` / `/`. The page files sit beside the tooling because Pages
+serves the root, so that is where they are.
 
 Key and scale are controls: twelve keys, twelve scales, plus three optional
 drone slots each holding a semitone offset from the tonic.
@@ -47,30 +47,30 @@ python3 tools/loop_qa.py loops/*.wav  # the sample gate
 integer *positions* in a note list — `pos + step`, `_fold`, `notes[pos]`. The
 only pitch-aware function is `stability()`, which folds intervals against the
 tonic to find rest points. So changing key or scale means handing it a different
-list, and the generator is untouched by it. Preserve this. It is why twelve
-scales cost nothing and why the thirteenth will too.
+list, and the generator is untouched by it. That is why twelve scales cost
+nothing and why the thirteenth would too.
 
 **Pitch is arithmetic, not authorship.** `scales.pitches` yields every MIDI note
 of a key and scale inside a range; `SampleSet.voiceFor` picks the nearest
 recording and returns the cents to reach the target. There is no cents table and
-no hand-written pitch-fill map, and there should not be one again. The
-recordings are whole-tone spaced, so nothing inside the recorded span shifts
-more than 100 cents — asserted by `check.mjs` across all 144 combinations.
+no hand-written pitch-fill map. The recordings are whole-tone spaced, so nothing
+inside the recorded span shifts more than 100 cents — asserted by `check.mjs`
+across all 144 combinations.
 
 **Note names are sounding pitch.** The loop files are named by fingering and a
 soprano recorder sounds an octave above that; `soundingOffset` in
 `engine/profile.js` is the only place that distinction exists.
 
-**Loop points must be read before decoding.** `decodeAudioData` discards the
-`smpl` chunk *and* detaches the ArrayBuffer, and a buffer whose loop points went
+**Loop points are read before decoding.** `decodeAudioData` discards the `smpl`
+chunk *and* detaches the ArrayBuffer, and a buffer whose loop points went
 missing does not error — it plays once and stops. `samples.js` walks the RIFF
 chunk table rather than scanning for the bytes "smpl", which can occur inside
 sample data.
 
-**The voice table is built once and must cover every reachable pitch.** That
-includes octaves the lead can be shifted to, not just the one it starts in — a
-note the table misses comes back `undefined` and reaches an `AudioParam` several
-layers down. `check.mjs` walks all 576 key/scale/octave combinations for this.
+**The voice table is built once, covering every reachable pitch.** That includes
+octaves the lead can be shifted to, not just the one it starts in — a note the
+table misses comes back `undefined` and reaches an `AudioParam` several layers
+down. `check.mjs` walks all 576 key/scale/octave combinations for this.
 
 **Notes are rasterized before they leave the engine.** `melody.rasterize` runs
 at the end of every breath and drops any ornament that would start within
@@ -84,67 +84,65 @@ unaffected. `check.mjs` asserts both halves.
 **The player is an ideal one.** One blowing pressure for every note and every
 breath (`breath.VELOCITY`), and true pitch throughout. The only thing that moves
 the level is the metric accent — downbeat, beat, offbeat, about 2 dB across —
-plus ornaments sitting a little under the note they decorate. Do not add drift,
-swell or breath-pressure variation back: it was tried and it reads as slop, and
-on a real duct flute louder would also mean sharper, which is worse.
+plus ornaments sitting a little under the note they decorate. Drift, swell and
+breath-pressure variation were tried and removed: they read as slop, and on a
+real duct flute louder would also mean sharper.
 
 **Drones are three optional slots**, each a semitone offset from the tonic, so a
 fifth is +7 in every scale and a drone can sit deliberately outside the one
 being played. They share one gain stage scaled by 1/sqrt(n).
 
-**Everything the page reads off `describe()` must be in `describe()`.** It
-returns the ranges, the menus, the voices *and* the envelope times and voice
-gains. A field omitted there surfaces as `NaN` deep in an `AudioParam` call, not
-as a missing-property error.
+**Everything the page reads off `describe()` is in `describe()`.** It returns
+the ranges, the menus, the voices *and* the envelope times and voice gains. A
+field omitted there surfaces as `NaN` deep in an `AudioParam` call, not as a
+missing-property error.
 
 **Facts about the recordings live in `profile.js`, not in the audio graph.**
 Makeup gain is the example that got this wrong once: it is a compensation for
 how quietly VCSL recorded, so it belongs with the sample set and not beside the
-`GainNode` that applies it. Re-author the loops at a different level and every
-such constant should be in one file.
+`GainNode` that applies it. Re-authoring the loops at a different level then
+moves one constant in one file.
 
-**Adding a parameter touches four places, and three of them are derived.** Put
-its range in `moods.NUMERIC_PARAMS` and, if the mood owns it, its name in
+**Adding a parameter touches four places, and three of them are derived.** Its
+range goes in `moods.NUMERIC_PARAMS` and, if the mood owns it, its name in
 `moods.MOOD_WEIGHTS`; `BREATH_FIELDS` is then computed as the difference, and
 the page builds its row from `describe()`. Only a menu-valued parameter needs a
-fifth edit (`moods.CHOICE_PARAMS` and its markup in `index.html`) — and note
-that `CHOICE_PARAMS` is subtracted from `BREATH_FIELDS`, so a numeric parameter
-on a menu does not also appear as a slider. `lead_octave` is the worked example:
-numeric, ranged, validated like any weight, rendered as four named choices.
-Give any new parameter a default in the `Instrument` constructor or `update()`
-will reject it forever as "must be a number".
+fifth edit (`moods.CHOICE_PARAMS` and its markup in `index.html`) — and
+`CHOICE_PARAMS` is subtracted from `BREATH_FIELDS`, so a numeric parameter on a
+menu does not also appear as a slider. `lead_octave` is the worked example:
+numeric, ranged, validated like any weight, rendered as four named choices. A
+parameter without a default in the `Instrument` constructor is rejected by
+`update()` forever as "must be a number".
 
 ## Verification
 
 There is no unit-test suite. Verification is measurement, and there are two
 gates: `tools/loop_qa.py` for the samples, `check.mjs` for the engine. A change
-to loop or DSP code is unverified until it has been run against a real sample
-folder and the pass count reported. A change to the audio graph or the page is
-unverified until a browser has actually played it — serve the repo root and drive it
-headlessly.
+to loop or DSP code is measured by running it against a real sample folder and
+reporting the pass count. A change to the audio graph or the page is measured by
+a browser actually playing it — serving the repo root and driving it headlessly.
 
 Note that `app.js` is an ES module, so its internals are **not** reachable
-as globals from an injected script. To measure audio, import the engine modules
-dynamically and render through an `OfflineAudioContext`; that exercises the same
-voices, loop points and detune the live graph uses.
+as globals from an injected script. Measuring audio means importing the engine
+modules dynamically and rendering through an `OfflineAudioContext`; that
+exercises the same voices, loop points and detune the live graph uses.
 
 Measured, and worth not re-deriving: three drones in A rendered 440.37 / 657.53
 / 220.18 Hz against A4 440, E5 659.26, A3 220.
 
 ## Conventions
 
-- Two hard-won DSP rules, stated in `tools/dsp.py`'s module docstring and not
-  to be relaxed without measurement: RMS envelope windows must span several
-  pitch periods, and pitch detection must be seeded from the nominal note in
-  the filename.
+- Two hard-won DSP rules, stated in `tools/dsp.py`'s module docstring and each
+  established by measurement: RMS envelope windows span several pitch periods,
+  and pitch detection is seeded from the nominal note in the filename.
 - Thresholds live in one place: `loop_qa.py`'s defaults (`CV < 0.02`,
   `wrap < 3.0`). Parameter ranges live in `moods.NUMERIC_PARAMS`, and the page
   reads them from `describe()` rather than restating them.
 - The engine uses round-half-to-even (`rng.js`'s `round`), not `Math.round`.
   The grid arithmetic lands on exact halves often enough that half-up shows as
   a rhythmic lean.
-- Rebuilding loops must also refresh `loops/manifest.json` — the browser
-  cannot list a directory, and a stale manifest is a silently missing note.
+- Rebuilding loops also refreshes `loops/manifest.json` — the browser cannot
+  list a directory, and a stale manifest is a silently missing note.
   `run.sh --rebuild` does both, and `check.mjs` fails if they disagree.
 - Loop files hold the loop **twice**, with the loop points on the second copy.
   The first is pre-roll (the note's entry, and what a crossfading reader needs);
@@ -152,15 +150,16 @@ Measured, and worth not re-deriving: three drones in A rendered 440.37 / 657.53
   fetched and decoded unheard.
 - `snake_case` in Python, `camelCase` in JS, `PascalCase` classes. Parameter
   *keys* stay snake_case on both sides, because they cross the boundary.
-- Prefer deriving a list to writing a second one. `BREATH_FIELDS`,
+- Lists are derived rather than written twice. `BREATH_FIELDS`,
   `TRANSFORM_NAMES` and `ROOM_FIELDS` are all computed from the table they
   describe, because a hand-kept copy is one edit from a control that silently
   never lights up.
-- One path, no fallbacks. Throw rather than silently substituting a default.
+- One path, no fallbacks: the code throws rather than silently substituting a
+  default.
 
 ## Scope
 
-Flutes only. No physical instruments are recorded — samples come from VCSL
-(CC0). Live playback only; no rendering to file. Vibrato is out of scope,
-though `detune` is an automatable `AudioParam`, so it is a choice rather than a
-limit.
+Flutes, at present. No physical instruments are recorded — samples come from
+VCSL (CC0). Playback is live; there is no rendering to file. There is no
+vibrato, though `detune` is an automatable `AudioParam`, so that is a choice
+rather than a limit.
