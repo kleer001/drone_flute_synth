@@ -99,7 +99,7 @@ p.hint { margin: .4rem 0 0; color: var(--muted); font-size: 11px; }
   display: flex; align-items: center; gap: .4rem; cursor: pointer;
 }
 .param[data-drone] label input { margin: 0; cursor: pointer; }
-.param[data-drone].off input[type=range] { opacity: .35; }
+.param[data-drone].off .stepper { opacity: .35; }
 .param[data-drone].off output { color: var(--track); }
 
 /* ---- commit ---- */

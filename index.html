@@ -32,11 +32,8 @@
         <select id="key"></select><output></output></div>
       <div class="param"><label for="mode">scale</label>
         <select id="mode"></select><output></output></div>
-      <div class="param"><label>lead octave offset</label>
-        <span class="stepper">
-          <button type="button" id="oct-down" title="down an octave">&minus;</button>
-          <button type="button" id="oct-up" title="up an octave">+</button>
-        </span><output id="lead_octave"></output></div>
+      <div class="param" id="octave-row"><label>lead octave offset</label>
+        <output id="lead_octave"></output></div>
       <div class="param"><label for="seed">seed</label>
         <input type="text" id="seed" inputmode="numeric">
         <button id="reseed" class="link" title="New seed">&#8635;</button></div>

@@ -327,6 +327,43 @@ function paramRow(name) {
   return row;
 }
 
+/* A minus/plus pair.
+ *
+ * Holding a button repeats, because the drone range is 48 steps wide and a
+ * control that needs 48 clicks to cross is not a control. The repeat is armed
+ * on pointerdown and cancelled from `window`, so releasing over a button that
+ * just disabled itself at the end of the range still stops it.
+ *
+ * `click` fires for keyboard activation too, which would double-step a mouse
+ * press; `detail === 0` is the way to tell a keyboard click from a real one. */
+function stepper(onStep) {
+  const wrap = document.createElement("span");
+  wrap.className = "stepper";
+  for (const [label, by, cls] of [["\u2212", -1, "down"], ["+", 1, "up"]]) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = cls;
+    b.textContent = label;
+    let hold = null, repeat = null;
+    const stop = () => {
+      clearTimeout(hold); clearInterval(repeat);
+      hold = repeat = null;
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+    b.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      onStep(by);
+      hold = setTimeout(() => { repeat = setInterval(() => onStep(by), 60); }, 400);
+      window.addEventListener("pointerup", stop);
+      window.addEventListener("pointercancel", stop);
+    });
+    b.addEventListener("click", (e) => { if (e.detail === 0) onStep(by); });
+    wrap.appendChild(b);
+  }
+  return wrap;
+}
+
 /* One drone slot. The interval is in semitones from the tonic, so +7 is a fifth
    in every scale and a slot can sit deliberately outside the one being played. */
 const INTERVALS = ["root", "m2", "M2", "m3", "M3", "4th", "TT", "5th",
@@ -343,22 +380,27 @@ function intervalName(semitones) {
 }
 
 function droneRow(i) {
-  const [lo, hi] = inst.drone_semitones;
   const row = document.createElement("div");
   row.className = "param";
   row.dataset.drone = i;
   row.innerHTML =
     `<label><input type="checkbox" class="on"> drone ${i + 1}</label>` +
-    `<input type="range" min="${lo}" max="${hi}" step="1">` +
     `<output></output>`;
-  const box = row.querySelector(".on"), slider = row.querySelector("[type=range]");
+  const box = row.querySelector(".on");
   box.addEventListener("change", () => {
     working.drones[i].on = box.checked; renderParams();
   });
-  slider.addEventListener("input", () => {
-    working.drones[i].semitones = parseInt(slider.value, 10); renderParams();
-  });
+  row.insertBefore(stepper((by) => nudge(working.drones[i], "semitones", by,
+                                         inst.drone_semitones)),
+                   row.querySelector("output"));
   return row;
+}
+
+/* Move a value by one step, held inside its range. Both steppers clamp the
+   same way, so neither can put the engine into a set it would refuse. */
+function nudge(holder, field, by, [lo, hi]) {
+  holder[field] = Math.max(lo, Math.min(hi, holder[field] + by));
+  renderParams();
 }
 
 let built = false;
@@ -373,6 +415,9 @@ function describe() {
     for (const name of inst.moods) m.appendChild(new Option(name, name));
     for (const k of inst.keys) $("key").appendChild(new Option(k, k));
     for (const k of inst.modes) $("mode").appendChild(new Option(k, k));
+    $("octave-row").insertBefore(
+      stepper((by) => nudge(working, "lead_octave", by, inst.ranges.lead_octave)),
+      $("lead_octave"));
     for (let i = 0; i < inst.drone_slots; i++) {
       $("drones").appendChild(droneRow(i));
     }
@@ -400,6 +445,13 @@ function isDirty(name) {
 const anyDirty = () =>
   inst !== null && Object.keys(inst.params).some(isDirty);
 
+/* Grey out whichever button has nowhere left to go, so the range is visible
+   without having to walk into it. */
+function ends(row, value, [lo, hi]) {
+  row.querySelector(".stepper .down").disabled = value <= lo;
+  row.querySelector(".stepper .up").disabled = value >= hi;
+}
+
 /* The working copy on screen, and whether it differs from what is sounding.
    Runs on every slider event, so each dirty flag is computed once rather than
    once per row -- `isDirty("drones")` serialises the slot list to compare it. */
@@ -407,22 +459,18 @@ function renderParams() {
   $("mood").value = working.mood;
   $("key").value = working.key;
   $("mode").value = working.mode;
-  // A stepper, so the row shows the number and the buttons stop at the ends.
-  const oct = working.lead_octave;
-  const [octLo, octHi] = inst.ranges.lead_octave;
   // U+2212, matching the minus the drone intervals use in the same column.
+  const oct = working.lead_octave;
   $("lead_octave").textContent =
     oct > 0 ? `+${oct}` : String(oct).replace("-", "\u2212");
-  $("oct-down").disabled = oct <= octLo;
-  $("oct-up").disabled = oct >= octHi;
+  ends($("octave-row"), oct, inst.ranges.lead_octave);
   if (document.activeElement !== $("seed")) $("seed").value = working.seed;
   const dronesDirty = isDirty("drones");
   for (const row of document.querySelectorAll("[data-drone]")) {
     const slot = working.drones[row.dataset.drone];
-    const box = row.querySelector(".on"), slider = row.querySelector("[type=range]");
-    box.checked = slot.on;
-    if (document.activeElement !== slider) slider.value = slot.semitones;
+    row.querySelector(".on").checked = slot.on;
     row.querySelector("output").textContent = intervalName(slot.semitones);
+    ends(row, slot.semitones, inst.drone_semitones);
     row.classList.toggle("off", !slot.on);
     row.classList.toggle("edited", dronesDirty);
   }
@@ -503,13 +551,6 @@ $("key").addEventListener("change", () => {
 $("mode").addEventListener("change", () => {
   working.mode = $("mode").value; renderParams();
 });
-const nudgeOctave = (by) => {
-  const [lo, hi] = inst.ranges.lead_octave;
-  working.lead_octave = Math.max(lo, Math.min(hi, working.lead_octave + by));
-  renderParams();
-};
-$("oct-down").addEventListener("click", () => nudgeOctave(-1));
-$("oct-up").addEventListener("click", () => nudgeOctave(1));
 $("seed").addEventListener("input", () => {
   working.seed = parseInt($("seed").value, 10) || 0; renderParams();
 });
