@@ -26,7 +26,8 @@
  *   its last note.
  * - **Gap-fill.** A leap opens a gap, and the next notes step back into it.
  * - **Ornaments between the structural notes.** The skeleton stays simple; the
- *   flourish is the personality.
+ *   flourish is the personality. They lean into the beat from the silence
+ *   before it, so the note they decorate keeps its place and its length.
  *
  * Everything random comes from the caller's Rng, so a seed reproduces a
  * performance exactly.
@@ -38,6 +39,10 @@ import { midiOf } from "./scales.js";
 import { round, mod } from "./rng.js";
 
 export const GRACE_S = 0.06;
+// No two notes may start closer together than this. It is the grace-note
+// spacing, so an ornament played as designed passes through untouched and only
+// collisions are thinned -- see `rasterize`.
+export const MIN_ONSET_GAP_S = GRACE_S;
 // Conventional note values, in eighths, longest first: whole, dotted half,
 // half, dotted quarter, quarter, eighth. A structural note is always one of
 // these, so every phrase is notatable.
@@ -141,6 +146,31 @@ const ANSWER_WEIGHTS = [3, 3, 2, 2];
 const RESTATE_TRANSFORMS = ["repeat", "sequence", "fragment", "diminish"];
 const RESTATE_WEIGHTS = [2, 4, 2, 1];
 
+/* Thin the decoration so nothing starts on top of anything else.
+ *
+ * Ornaments are placed against the note they decorate without knowing what else
+ * landed nearby, so a run-in and a turn can arrive in the same instant. Every
+ * onset restarts a sample from scratch, and a pile of them in one moment is
+ * heard as a rasp rather than as ornament.
+ *
+ * Structural notes are never dropped. They are the tune, they sit on the grid,
+ * and the grid already spaces them further apart than this. Only ornaments give
+ * way, which is why the phrase that comes out is the phrase that went in.
+ */
+export function rasterize(notes, gap = MIN_ONSET_GAP_S) {
+  // On a tie the structural note sorts first, so it is the one that survives.
+  const ordered = notes.slice().sort((a, b) =>
+    (a.startS - b.startS) || (a.isGrace === b.isGrace ? 0 : a.isGrace ? 1 : -1));
+  const kept = [];
+  let last = -Infinity;
+  for (const n of ordered) {
+    if (n.isGrace && n.startS - last < gap) continue;
+    kept.push(n);
+    last = n.startS;
+  }
+  return kept;
+}
+
 /* 0 at the phrase edges, 1 at the climax -- a rise and a longer fall. */
 function arch(position) {
   if (position <= CLIMAX_AT) return position / CLIMAX_AT;
@@ -230,30 +260,6 @@ export class Phrasing {
 
   // -- ornaments ----------------------------------------------------------
 
-  /* Shake with the upper neighbour, then resolve onto the main note.
-   *
-   * The shakes are grace: they decorate, and the note the motif asked for is
-   * the resolution, which lands on a grid position with a conventional value of
-   * its own. A trill therefore never moves the skeleton. */
-  _trill(pos, startS, velocity, unitS, held) {
-    const upper = this._fold(pos + 1);
-    const tail = held >= 6 ? 2 : 1;            // units the resolution keeps
-    const shakeUnits = held - tail;
-    const shakeS = shakeUnits * unitS;
-    const n = Math.max(2, shakeUnits * 4);     // four shakes to the unit
-    const rate = shakeS / n;
-    const out = [];
-    for (let i = 0; i < n; i++) {
-      out.push(new Note(this.notes[i % 2 === 0 ? pos : upper],
-                        startS + i * rate, rate,
-                        i % 2 === 0 ? velocity : Math.max(1, Math.trunc(velocity * 0.9)),
-                        true));
-    }
-    out.push(new Note(this.notes[pos], startS + shakeS,
-                      tail * unitS * ARTICULATION, velocity));
-    return out;
-  }
-
   /* Grace notes leaning into the beat, ahead of the structural note.
    *
    * They borrow from the silence before the note rather than from the note
@@ -299,8 +305,6 @@ export class Phrasing {
     const contrast = mood.call_response;
     const ornRate = Math.min(1, mood.ornament_rate *
       (answering ? 1 + 0.9 * contrast : 1 - 0.7 * contrast));
-    const trillRate = Math.min(1, mood.trill_rate *
-      (answering ? 1 + contrast : 1 - 0.8 * contrast));
     const cadenceP = Math.min(1, mood.cadence_strength *
       (answering ? 1 + contrast : 1 - contrast));
 
@@ -360,14 +364,10 @@ export class Phrasing {
         if (Math.abs(pos - prevPos) > 2 && rng.random() < ornRate) {
           scheduled.push(...this._runInto(prevPos, pos, startS, unitS, velocity));
         }
-        if (held >= 4 && rng.random() < trillRate) {
-          scheduled.push(...this._trill(pos, startS, velocity, unitS, held));
-        } else {
-          if (rng.random() < ornRate) {
-            scheduled.push(...this._ornament(pos, startS, velocity));
-          }
-          scheduled.push(new Note(this.notes[pos], startS, durS, velocity));
+        if (rng.random() < ornRate) {
+          scheduled.push(...this._ornament(pos, startS, velocity));
         }
+        scheduled.push(new Note(this.notes[pos], startS, durS, velocity));
         at += held;
         placed += 1;
       }
@@ -403,9 +403,6 @@ export class Phrasing {
 
     this.lastRole = `${this.role}:${this.relation}`;
     this.role = answering ? "call" : "answer";
-    // Stable sort, so a grace note stays ahead of the note it decorates when
-    // the two share an onset.
-    scheduled.sort((a, b) => a.startS - b.startS);
-    return scheduled;
+    return rasterize(scheduled);
   }
 }

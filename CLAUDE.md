@@ -72,6 +72,15 @@ includes octaves the lead can be shifted to, not just the one it starts in — a
 note the table misses comes back `undefined` and reaches an `AudioParam` several
 layers down. `check.mjs` walks all 576 key/scale/octave combinations for this.
 
+**Notes are rasterized before they leave the engine.** `melody.rasterize` runs
+at the end of every breath and drops any ornament that would start within
+`MIN_ONSET_GAP_S` of another note. Ornaments are placed against the note they
+decorate without knowing what else landed nearby, so two could arrive in the
+same instant — and every onset restarts a sample, so a pile of them in one
+moment is heard as a rasp. Structural notes are never dropped, which is why the
+phrase that comes out is the phrase that went in, and why `noteSequence` is
+unaffected. `check.mjs` asserts both halves.
+
 **Drones are three optional slots**, each a semitone offset from the tonic, so a
 fifth is +7 in every scale and a drone can sit deliberately outside the one
 being played. They share one gain stage scaled by 1/sqrt(n).

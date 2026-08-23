@@ -45,7 +45,7 @@ const LABELS = {
   notes_per_breath: "notes / breath", step_leap_ratio: "step : leap",
   ornament_rate: "ornament", cadence_strength: "cadence",
   register_bias: "register bias", sweep_depth: "sweep depth",
-  pushed_bias: "pushed bias", trill_rate: "trill",
+  pushed_bias: "pushed bias",
   call_response: "call / answer", bpm: "tempo",
   breath_mean_s: "breath mean", breath_spread_s: "breath spread",
   inhale_s: "inhale gap",

@@ -14,6 +14,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { Instrument } from "./engine/instrument.js";
 import { noteSequence } from "./engine/breath.js";
+import { rasterize, MIN_ONSET_GAP_S } from "./engine/melody.js";
 import { LOOP_SUFFIX } from "./engine/samples.js";
 import * as scales from "./engine/scales.js";
 
@@ -138,6 +139,30 @@ if (!bad.length) {
 } else {
   failures.push(`coverage: ${bad.length} broken: ${bad.slice(0, 3).join("; ")}`);
   console.log(`FAIL  coverage: ${bad.slice(0, 3).join("; ")}`);
+}
+
+// The rasterizer may thin decoration but must never touch the tune, and must
+// leave nothing stacked on the same instant.
+let tooClose = 0, breaths = 0;
+const raster = new Instrument(files, { mood, seed: 99, key: "C", mode: "minor" });
+for (let i = 0; i < 200; i++) {
+  const b = raster.nextBreath();
+  breaths++;
+  for (let k = 1; k < b.notes.length; k++) {
+    if (b.notes[k].start_s - b.notes[k - 1].start_s < MIN_ONSET_GAP_S - 1e-9) tooClose++;
+  }
+}
+// and directly: structural notes survive the pass untouched
+const N = (start, grace) => ({ startS: start, isGrace: grace, name: "x" });
+const pile = [N(0, false), N(0, true), N(0.01, true), N(0.02, false), N(0.5, true)];
+const survived = rasterize(pile).filter((n) => !n.isGrace).length;
+if (!tooClose && survived === 2) {
+  console.log(`PASS  rasterize: ${breaths} breaths, no onsets closer than ` +
+              `${(MIN_ONSET_GAP_S * 1000).toFixed(0)}ms, structural notes never dropped`);
+} else {
+  const why = tooClose ? `${tooClose} onsets too close` : `dropped a structural note`;
+  failures.push(`rasterize: ${why}`);
+  console.log(`FAIL  rasterize: ${why}`);
 }
 
 // A rejected parameter set must change nothing.

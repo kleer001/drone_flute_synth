@@ -59,7 +59,7 @@ climbs to it and comes back down. It lands on notes that sit still against the
 drone, and it leans on the beat, so what you hear could be written on paper.
 
 Turn **call / answer** up to hear the two halves pull apart. Turn **ornament**
-and **trill** up and it starts showing off.
+up and it starts showing off.
 
 </details>
 
