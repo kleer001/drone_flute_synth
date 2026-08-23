@@ -29,7 +29,7 @@ Every performance has a seed. Same seed, same piece.
 |---|---|
 | **key** | any of the twelve |
 | **scale** | major, minor, the modes, harmonic minor, both pentatonics, blues, whole tone |
-| **octave** | where the tune sits. Two octaves down still sounds like a flute. One up gets shrill, which is sometimes what you want |
+| **lead octave offset** | where the tune sits, nudged in octaves. Two down still sounds like a flute. One up gets shrill, which is sometimes what you want |
 | **drone 1–3** | three of them. Each on or off, at whatever interval you want under the tune |
 | **mood** | contemplative, mourning, pastoral, ceremonial, restless, sleep |
 | **the sliders** | how busy it is, how far it leaps, how much it decorates, how fast it moves, how long a breath lasts |

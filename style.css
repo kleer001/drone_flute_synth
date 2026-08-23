@@ -33,7 +33,7 @@ h1 { font-size: 1.1rem; font-weight: 600; margin: .8rem 0 .2rem; }
 
 .rows { background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; }
 .param {
-  display: grid; grid-template-columns: 7rem 1fr 4.2rem;
+  display: grid; grid-template-columns: 8.6rem 1fr 4.2rem;
   align-items: center; gap: .5rem; padding: .18rem .5rem; min-height: 1.6rem;
 }
 .param + .param { border-top: 1px solid var(--rule); }
@@ -79,6 +79,17 @@ footer { padding: .6rem .5rem; color: var(--muted); font-size: 11px; }
 .tab.on { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
 p.hint { margin: .4rem 0 0; color: var(--muted); font-size: 11px; }
 .param.edited label { color: #b26a00; }
+
+/* ---- stepper ---- */
+/* Two nudges rather than a menu. The value sits in the output column with every
+   other value, so the eye finds all of them in the same place. */
+.stepper { display: flex; gap: .3rem; }
+.stepper button {
+  width: 1.5rem; height: 1.5rem; padding: 0; cursor: pointer; line-height: 1;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 3px;
+  color: var(--ink); font-size: .95rem;
+}
+.stepper button:disabled { opacity: .3; cursor: default; }
 
 /* ---- drone slots ---- */
 /* The checkbox rides inside the label so the whole word is a hit target, and

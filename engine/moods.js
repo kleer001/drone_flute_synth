@@ -83,9 +83,9 @@ export const MOOD_WEIGHTS = ["notes_per_breath", "step_leap_ratio",
   "ornament_rate", "cadence_strength", "register_bias", "sweep_depth",
   "pushed_bias", "trill_rate", "call_response", "bpm", "breath_mean_s"];
 
-// The parameters chosen from a menu rather than dragged on a slider. Some are
-// numeric all the same -- `lead_octave` has a range like any weight, it just
-// reads better as four named choices than as a slider with four stops.
+// The parameters the head row gives their own control -- a menu, a text box, a
+// stepper. Some are numeric all the same: `lead_octave` has a range like any
+// weight, it just reads better as a nudge than as a slider with four stops.
 export const CHOICE_PARAMS = ["mood", "key", "mode", "seed", "lead_octave"];
 
 // The numeric parameters left over: not a mood weight, not on a menu. Derived

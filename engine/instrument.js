@@ -136,7 +136,6 @@ export class Instrument {
       preset_weights: moods.presetWeights(),
       keys: scales.NOTE_NAMES,
       modes: Object.keys(scales.MODES),
-      lead_octaves: moods.NUMERIC_PARAMS.lead_octave,
       drone_slots: moods.DRONE_SLOTS,
       drone_semitones: moods.DRONE_SEMITONES,
       meter: { bpm: meter.bpm, beats_per_measure: meter.beatsPerMeasure,

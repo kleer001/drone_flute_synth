@@ -115,7 +115,7 @@ if (repeats === 0) {
 // error -- it is `undefined` reaching an AudioParam several layers down.
 let combos = 0, worstTune = 0, bad = [];
 const probe = new Instrument(files, { mood, seed: 7, key: "C", mode: "minor" });
-const [octLo, octHi] = probe.describe().lead_octaves;
+const [octLo, octHi] = probe.describe().ranges.lead_octave;
 for (const k of scales.NOTE_NAMES) {
   for (const m of Object.keys(scales.MODES)) {
     for (let o = octLo; o <= octHi; o++) {

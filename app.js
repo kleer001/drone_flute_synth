@@ -327,12 +327,6 @@ function paramRow(name) {
   return row;
 }
 
-/* Where the tune sits, as a shift on the recorded range. Named rather than
-   numbered: "-1" does not tell you which way the flute moves. */
-const OCTAVE_LABELS = {"-2": "two down", "-1": "one down",
-                       "0": "as recorded", "1": "one up"};
-const octaveLabel = (n) => OCTAVE_LABELS[String(n)] ?? `${n > 0 ? "+" : ""}${n}`;
-
 /* One drone slot. The interval is in semitones from the tonic, so +7 is a fifth
    in every scale and a slot can sit deliberately outside the one being played. */
 const INTERVALS = ["root", "m2", "M2", "m3", "M3", "4th", "TT", "5th",
@@ -379,10 +373,6 @@ function describe() {
     for (const name of inst.moods) m.appendChild(new Option(name, name));
     for (const k of inst.keys) $("key").appendChild(new Option(k, k));
     for (const k of inst.modes) $("mode").appendChild(new Option(k, k));
-    const [octLo, octHi] = inst.lead_octaves;
-    for (let o = octHi; o >= octLo; o--) {
-      $("lead_octave").appendChild(new Option(octaveLabel(o), o));
-    }
     for (let i = 0; i < inst.drone_slots; i++) {
       $("drones").appendChild(droneRow(i));
     }
@@ -417,7 +407,14 @@ function renderParams() {
   $("mood").value = working.mood;
   $("key").value = working.key;
   $("mode").value = working.mode;
-  $("lead_octave").value = working.lead_octave;
+  // A stepper, so the row shows the number and the buttons stop at the ends.
+  const oct = working.lead_octave;
+  const [octLo, octHi] = inst.ranges.lead_octave;
+  // U+2212, matching the minus the drone intervals use in the same column.
+  $("lead_octave").textContent =
+    oct > 0 ? `+${oct}` : String(oct).replace("-", "\u2212");
+  $("oct-down").disabled = oct <= octLo;
+  $("oct-up").disabled = oct >= octHi;
   if (document.activeElement !== $("seed")) $("seed").value = working.seed;
   const dronesDirty = isDirty("drones");
   for (const row of document.querySelectorAll("[data-drone]")) {
@@ -506,10 +503,13 @@ $("key").addEventListener("change", () => {
 $("mode").addEventListener("change", () => {
   working.mode = $("mode").value; renderParams();
 });
-$("lead_octave").addEventListener("change", () => {
-  // A select hands back a string; the engine validates this as a number.
-  working.lead_octave = parseInt($("lead_octave").value, 10); renderParams();
-});
+const nudgeOctave = (by) => {
+  const [lo, hi] = inst.ranges.lead_octave;
+  working.lead_octave = Math.max(lo, Math.min(hi, working.lead_octave + by));
+  renderParams();
+};
+$("oct-down").addEventListener("click", () => nudgeOctave(-1));
+$("oct-up").addEventListener("click", () => nudgeOctave(1));
 $("seed").addEventListener("input", () => {
   working.seed = parseInt($("seed").value, 10) || 0; renderParams();
 });
