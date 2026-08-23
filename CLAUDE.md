@@ -19,12 +19,14 @@ drone slots each holding a semitone offset from the tonic.
 | `engine/breath.js` | The breath cycle: phrases resolved to bar lines, plus `Meter` |
 | `engine/moods.js` | Parameter set: weights, bounds, whole-set validation, drone defaults |
 | `engine/profile.js` | Everything true of *these recordings*: sounding offset, lead range, drone octave, meter, makeup gain, provenance |
-| `engine/samples.js` | `smpl`-chunk parsing and nearest-recording lookup |
+| `engine/samples.js` | The recordings: RIFF chunk parsing, the manifest reader, and the two pools — `SampleSet` by pitch, `StrokeSet` by stroke |
 | `engine/instrument.js` | The seam the page talks to: params in, breaths out |
 | `engine/rng.js` | Seeded PRNG, plus round-half-to-even and non-negative modulo |
 | `loops/` | The authored loops, **committed** — without them there is no player to link to |
+| `strokes/` | The authored percussion one-shots, committed for the same reason |
+| `manifest.json` | Generated index of both directories — the browser cannot list one |
 | `check.mjs` | Acceptance gate for the engine (node, no browser) |
-| `tools/` | Build-time sample work in Python: inventory, loop authoring, loop QA, manifest |
+| `tools/` | Build-time sample work in Python: inventory, loop and one-shot authoring, their QA gates, manifest |
 
 There is no Python at runtime. `tools/` is a build step and imports only numpy,
 scipy and its own `dsp` module.
@@ -35,8 +37,9 @@ scipy and its own `dsp` module.
 ./run.sh                 # serves the repo root on the first free port from 8740
 ./run.sh --rebuild       # re-author the loops from VCSL first (needs the venv)
 
-node check.mjs --key F# --mode blues     # the engine gate
-python3 tools/loop_qa.py loops/*.wav  # the sample gate
+node check.mjs --key F# --mode blues       # the engine gate
+python3 tools/loop_qa.py loops/*.wav      # the loop gate
+python3 tools/stroke_qa.py strokes/*.wav  # the one-shot gate
 ```
 
 `?key=`, `?mode=`, `?mood=` and `?seed=` set the page's starting state.
@@ -60,6 +63,51 @@ across all 144 combinations.
 **Note names are sounding pitch.** The loop files are named by fingering and a
 soprano recorder sounds an octave above that; `soundingOffset` in
 `engine/profile.js` is the only place that distinction exists.
+
+**Recordings come in two forms, and the pools differ in what indexes them.**
+A sustained note is looped, so one recording covers a whole breath; a struck
+one is over when it is over. `SampleSet` is indexed by *pitch* — hand it a MIDI
+note, get the nearest recording and the cents to reach it. `StrokeSet` is
+indexed by *stroke and force* — hand it `hit` at velocity 96, get the layer
+recorded at about that force and a variation. Both live in `samples.js`, and
+`readSampleInfo` reports a missing `smpl` chunk as `loop: null` rather than as
+an error, because a one-shot wants none; `readLoopPoints` is the caller that
+says a missing one is fatal.
+
+**Nothing at runtime parses a recording's name.** VCSL names its percussion
+inconsistently across instruments — `HDrumL_Hit_v2_rr1_Sum`,
+`Mid_ShakerDouble_Down_rr1`, `Cabasa1_Rub_v1_rr2_Mid` — so which file is which
+stroke is decided once, by a table in `tools/oneshot.py`, and written into the
+manifest. Everything downstream reads `<pool>-<stroke>-l<level>-v<variant>.wav`,
+which is ours and regular.
+
+**A round robin that can repeat is not one.** `StrokeSet.pick` draws from a
+layer excluding the recording it used last, because two identical onsets
+running is the sound of a sampler rather than a player — which is the only
+reason several recordings of one stroke were authored. Where a layer holds two
+that is strict alternation; where it holds more it is a walk that never repeats
+immediately. The variations inside a layer are sorted, so which one a seed
+reaches does not depend on the order the build step walked the directory in.
+
+**Velocity layers are spread across the range, not keyed on their numbers.**
+The frame drum was recorded at VCSL's layers 2 and 3 and has no layer 1, so a
+table keyed on the recorded number would leave the bottom of the velocity range
+unplayable. `pick` spreads whatever layers exist evenly over 0–127 instead, and
+`check.mjs` asserts that velocity 0 and 127 reach the softest and loudest.
+
+**A pool is normalised by one factor, not file by file.** Normalising each
+recording to its own peak would erase exactly what the velocity layers encode:
+a soft hit and a hard one would come out the same size, and choosing a layer
+would change the timbre without changing the loudness. Measured: the frame
+drum's two layers sit 17–22 dB apart, which is a cliff rather than a ramp at
+the midpoint of the velocity range.
+
+**Percussion draws from its own random stream.** Sharing the melody's would
+mean a strike consumed a number the phrase generator was going to use, so
+turning a drum on would rewrite the tune and a seed would no longer name one
+performance. `Instrument` seeds a second `Rng` from the same seed offset by a
+constant; `check.mjs` asserts that 320 strikes change no note of 40 breaths and
+that the strikes themselves reproduce.
 
 **Loop points are read before decoding.** `decodeAudioData` discards the `smpl`
 chunk *and* detaches the ArrayBuffer, and a buffer whose loop points went
@@ -116,8 +164,12 @@ parameter without a default in the `Instrument` constructor is rejected by
 
 ## Verification
 
-There is no unit-test suite. Verification is measurement, and there are two
-gates: `tools/loop_qa.py` for the samples, `check.mjs` for the engine. A change
+There is no unit-test suite. Verification is measurement, and there are three
+gates: `tools/loop_qa.py` for the loops, `tools/stroke_qa.py` for the one-shots,
+`check.mjs` for the engine. The one-shot gate is fatal in `run.sh` where the
+loop gate is advisory: a loop that misses its CV threshold is a known
+compromise on the lowest note, while a one-shot that fails carries a click or a
+DC step that every onset would sound. A change
 to loop or DSP code is measured by running it against a real sample folder and
 reporting the pass count. A change to the audio graph or the page is measured by
 a browser actually playing it — serving the repo root and driving it headlessly.
@@ -141,9 +193,14 @@ Measured, and worth not re-deriving: three drones in A rendered 440.37 / 657.53
 - The engine uses round-half-to-even (`rng.js`'s `round`), not `Math.round`.
   The grid arithmetic lands on exact halves often enough that half-up shows as
   a rhythmic lean.
-- Rebuilding loops also refreshes `loops/manifest.json` — the browser cannot
-  list a directory, and a stale manifest is a silently missing note.
-  `run.sh --rebuild` does both, and `check.mjs` fails if they disagree.
+- Rebuilding also refreshes `manifest.json` — the browser cannot list a
+  directory, and a stale manifest is a silently missing note or a stroke that
+  never sounds. It sits at the root because it indexes both `loops/` and
+  `strokes/`. `run.sh --rebuild` does all of it, and `check.mjs` fails if the
+  manifest and the directories disagree.
+- The manifest is read through `samples.parseManifest` rather than indexed
+  field by field, because the page and the acceptance gate have to agree about
+  what a pool is and a second reader is one edit from disagreeing.
 - Loop files hold the loop **twice**, with the loop points on the second copy.
   The first is pre-roll (the note's entry, and what a crossfading reader needs);
   nothing reads past `loopEnd`, so a third copy would be a third of the payload
@@ -159,7 +216,8 @@ Measured, and worth not re-deriving: three drones in A rendered 440.37 / 657.53
 
 ## Scope
 
-Flutes, at present. No physical instruments are recorded — samples come from
-VCSL (CC0). Playback is live; there is no rendering to file. There is no
-vibrato, though `detune` is an automatable `AudioParam`, so that is a choice
-rather than a limit.
+Flutes and percussion, at present — the percussion pools are authored and
+gated, and nothing plays them yet. No physical instruments are recorded;
+samples come from VCSL (CC0). Playback is live; there is no rendering to file.
+There is no vibrato, though `detune` is an automatable `AudioParam`, so that is
+a choice rather than a limit.

@@ -11,15 +11,18 @@
  * are different performances, and a gate that could not tell them apart would
  * pass a timing regression without noticing.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { Instrument } from "./engine/instrument.js";
 import { noteSequence } from "./engine/breath.js";
 import { rasterize, MIN_ONSET_GAP_S } from "./engine/melody.js";
-import { LOOP_SUFFIX } from "./engine/samples.js";
+import { LOOP_SUFFIX, parseManifest } from "./engine/samples.js";
+import { Rng } from "./engine/rng.js";
 import * as scales from "./engine/scales.js";
 
 const BREATHS = 60;
+const MANIFEST = "manifest.json";
 const LOOPS_DIR = "loops";
+const STROKES_DIR = "strokes";
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -34,8 +37,8 @@ function render(b) {
          `${b.drones.join(",")} | ${notes}`;
 }
 
-function perform(files, opts) {
-  const inst = new Instrument(files, opts);
+function perform(manifest, opts) {
+  const inst = new Instrument(manifest, opts);
   const lines = [], sequences = [];
   for (let i = 0; i < BREATHS; i++) {
     const b = inst.nextBreath();
@@ -46,36 +49,51 @@ function perform(files, opts) {
 }
 
 // Read the manifest, because that is what the page reads. Scanning the
-// directory instead would make this gate blind to the one failure the manifest
-// exists to prevent -- a loop on disk that the page never learns about.
-let files;
+// directories instead would make this gate blind to the one failure the
+// manifest exists to prevent -- a recording on disk the page never learns
+// about, or one listed that is not there.
+let manifest;
 try {
-  files = JSON.parse(readFileSync(`${LOOPS_DIR}/manifest.json`, "utf8")).files;
+  manifest = parseManifest(JSON.parse(readFileSync(MANIFEST, "utf8")));
 } catch (e) {
-  console.error(`cannot read ${LOOPS_DIR}/manifest.json (${e.message}). ` +
-                `Run tools/loopfind.py then tools/manifest.py, or ./run.sh --rebuild.`);
+  console.error(`cannot read ${MANIFEST} (${e.message}). ` +
+                `Run tools/manifest.py, or ./run.sh --rebuild.`);
   process.exit(2);
 }
-const onDisk = readdirSync(LOOPS_DIR).filter((f) => f.endsWith(LOOP_SUFFIX));
+const files = manifest.loops.files;
+const pools = Object.entries(manifest.percussion);
+
+const listOf = (dir, keep) =>
+  existsSync(dir) ? readdirSync(dir).filter(keep).map((f) => `${dir}/${f}`) : [];
+const onDisk = [
+  ...listOf(LOOPS_DIR, (f) => f.endsWith(LOOP_SUFFIX)),
+  ...listOf(STROKES_DIR, (f) => f.endsWith(".wav")),
+];
+const listed = [
+  ...manifest.loops.paths,
+  ...pools.flatMap(([, pool]) => pool.files()),
+];
 
 const key = arg("key", "C"), mode = arg("mode", "minor");
 const mood = arg("mood", "contemplative");
-console.log(`samples : ${files.length} loops from ${LOOPS_DIR}`);
+const strokeCount = pools.reduce((n, [, p]) => n + p.files().length, 0);
+console.log(`samples : ${files.length} loops from ${LOOPS_DIR}, ` +
+            `${strokeCount} one-shots in ${pools.length} pools from ${STROKES_DIR}`);
 console.log(`key     : ${key} ${mode}`);
 console.log(`mood    : ${mood}, ${BREATHS} breaths\n`);
 
-const a = perform(files, { mood, seed: 1234, key, mode });
-const b = perform(files, { mood, seed: 1234, key, mode });
-const c = perform(files, { mood, seed: 5678, key, mode });
+const a = perform(manifest, { mood, seed: 1234, key, mode });
+const b = perform(manifest, { mood, seed: 1234, key, mode });
+const c = perform(manifest, { mood, seed: 5678, key, mode });
 
 const failures = [];
 const same = (x, y) => x.lines.join("\n") === y.lines.join("\n");
 
 // The manifest is generated; a stale one is a note the page silently loses.
-const missing = onDisk.filter((f) => !files.includes(f));
-const phantom = files.filter((f) => !onDisk.includes(f));
+const missing = onDisk.filter((f) => !listed.includes(f));
+const phantom = listed.filter((f) => !onDisk.includes(f));
 if (!missing.length && !phantom.length) {
-  console.log(`PASS  manifest: lists all ${onDisk.length} loops on disk`);
+  console.log(`PASS  manifest: lists all ${onDisk.length} recordings on disk`);
 } else {
   const why = [missing.length ? `${missing.join(", ")} on disk but unlisted` : "",
                phantom.length ? `${phantom.join(", ")} listed but absent` : ""]
@@ -115,7 +133,7 @@ if (repeats === 0) {
 // it has to have a voice. A note the voice table does not cover is not an
 // error -- it is `undefined` reaching an AudioParam several layers down.
 let combos = 0, worstTune = 0, bad = [];
-const probe = new Instrument(files, { mood, seed: 7, key: "C", mode: "minor" });
+const probe = new Instrument(manifest, { mood, seed: 7, key: "C", mode: "minor" });
 const [octLo, octHi] = probe.describe().ranges.lead_octave;
 for (const k of scales.NOTE_NAMES) {
   for (const m of Object.keys(scales.MODES)) {
@@ -144,7 +162,7 @@ if (!bad.length) {
 // The rasterizer may thin decoration but must never touch the tune, and must
 // leave nothing stacked on the same instant.
 let tooClose = 0, breaths = 0;
-const raster = new Instrument(files, { mood, seed: 99, key: "C", mode: "minor" });
+const raster = new Instrument(manifest, { mood, seed: 99, key: "C", mode: "minor" });
 for (let i = 0; i < 200; i++) {
   const b = raster.nextBreath();
   breaths++;
@@ -166,7 +184,7 @@ if (!tooClose && survived === 2) {
 }
 
 // A rejected parameter set must change nothing.
-const guard = new Instrument(files, { mood, seed: 3, key: "C", mode: "minor" });
+const guard = new Instrument(manifest, { mood, seed: 3, key: "C", mode: "minor" });
 const before = JSON.stringify(guard.params);
 let refused = false;
 try { guard.update({ bpm: 999 }); } catch { refused = true; }
@@ -175,6 +193,124 @@ if (refused && JSON.stringify(guard.params) === before) {
 } else {
   failures.push("validation: a bad set was accepted or partially applied");
   console.log("FAIL  validation");
+}
+
+// ---- percussion --------------------------------------------------------
+//
+// A pool is not a scale: nothing here is derived by arithmetic, so what has to
+// be checked is that every stroke can actually be reached, that a round robin
+// really rotates, and above all that reaching for one cannot disturb the tune.
+if (!pools.length) {
+  console.log("SKIP  percussion: no pools authored (run tools/oneshot.py)");
+} else {
+  // Every stroke, at every velocity, returns a recording the pool owns.
+  const unreachable = [];
+  for (const [name, pool] of pools) {
+    const own = new Set(pool.files());
+    for (const stroke of pool.strokes) {
+      for (let v = 0; v <= 127; v += 1) {
+        const { path } = pool.pick(stroke, v, new Rng(v + 1));
+        if (!own.has(path)) unreachable.push(`${name}/${stroke} v${v} -> ${path}`);
+      }
+    }
+  }
+  // What the instrument says it needs and what the pools hold are the same
+  // set, or the page would fetch a file nothing plays -- or miss one it does.
+  const reachable = probe.strokeFiles().join(" ");
+  const authored = pools.flatMap(([, pool]) => pool.files()).sort().join(" ");
+  if (reachable !== authored) unreachable.push("strokeFiles() disagrees with the pools");
+
+  if (!unreachable.length) {
+    const strokes = pools.reduce((n, [, p]) => n + p.strokes.length, 0);
+    console.log(`PASS  pools: ${strokes} strokes across ${pools.length} pools, ` +
+                `every velocity 0-127 voiced, all ${probe.strokeFiles().length} files reachable`);
+  } else {
+    failures.push(`pools: ${unreachable.length} unreachable: ${unreachable[0]}`);
+    console.log(`FAIL  pools: ${unreachable[0]}`);
+  }
+
+  // The softest velocity reaches the softest layer and the loudest the
+  // loudest, or a recorded layer is one nothing can ever ask for.
+  const unusedLayers = [];
+  for (const [name, pool] of pools) {
+    for (const stroke of pool.strokes) {
+      const layers = pool.levels(stroke);
+      const lo = pool.pick(stroke, 0, new Rng(1)).level;
+      const hi = pool.pick(stroke, 127, new Rng(1)).level;
+      if (lo !== layers[0] || hi !== layers[layers.length - 1]) {
+        unusedLayers.push(`${name}/${stroke}: 0->${lo}, 127->${hi}, have ${layers.join(",")}`);
+      }
+    }
+  }
+  if (!unusedLayers.length) {
+    console.log("PASS  layers: velocity 0 and 127 reach the softest and loudest recorded layer");
+  } else {
+    failures.push(`layers: ${unusedLayers[0]}`);
+    console.log(`FAIL  layers: ${unusedLayers[0]}`);
+  }
+
+  // A round robin that can repeat is not one. Two identical onsets running is
+  // the sound of a sampler rather than a player, which is the whole reason
+  // several recordings of one stroke were authored.
+  const repeated = [];
+  for (const [name, pool] of pools) {
+    for (const stroke of pool.strokes) {
+      for (const level of pool.levels(stroke)) {
+        if (pool.variants(stroke, level) < 2) continue;
+        const rng = new Rng(4242);
+        // Velocity that lands on this layer, so the draw exercises it.
+        const layers = pool.levels(stroke);
+        const v = Math.round((layers.indexOf(level) / Math.max(1, layers.length - 1)) * 127);
+        let last = null;
+        for (let i = 0; i < 200; i++) {
+          const { path } = pool.pick(stroke, v, rng);
+          if (path === last) { repeated.push(`${name}/${stroke} l${level}`); break; }
+          last = path;
+        }
+      }
+    }
+  }
+  if (!repeated.length) {
+    console.log("PASS  round robin: 200 strikes, no recording used twice running");
+  } else {
+    failures.push(`round robin: ${repeated[0]} repeated`);
+    console.log(`FAIL  round robin: ${repeated[0]} repeated`);
+  }
+
+  // The one that decides whether percussion can be added at all: it draws from
+  // its own stream, so striking must not consume a number the phrase generator
+  // was going to use. If this fails, turning a drum on rewrites the melody and
+  // a seed no longer names one performance.
+  const [poolName, poolSet] = pools[0];
+  const stroke = poolSet.strokes[0];
+  const plain = new Instrument(manifest, { mood, seed: 31337, key, mode });
+  const struck = new Instrument(manifest, { mood, seed: 31337, key, mode });
+  const quiet = [], loud = [], hits = [];
+  for (let i = 0; i < 40; i++) {
+    quiet.push(noteSequence(plain.nextBreath().notes));
+    const b = struck.nextBreath();
+    // Strike as often as a rhythm layer would, between planning breaths.
+    for (let k = 0; k < 8; k++) hits.push(struck.strike(poolName, stroke, 40 + 8 * k).path);
+    loud.push(noteSequence(b.notes));
+  }
+  const undisturbed = quiet.join("|") === loud.join("|");
+  // and the strikes themselves reproduce from the seed
+  const again = new Instrument(manifest, { mood, seed: 31337, key, mode });
+  const hits2 = [];
+  for (let i = 0; i < 40; i++) {
+    again.nextBreath();
+    for (let k = 0; k < 8; k++) hits2.push(again.strike(poolName, stroke, 40 + 8 * k).path);
+  }
+  const reproducible = hits.join(" ") === hits2.join(" ");
+  if (undisturbed && reproducible) {
+    console.log(`PASS  streams: ${hits.length} strikes changed no note of 40 breaths, ` +
+                `and reproduced from the seed`);
+  } else {
+    const why = !undisturbed ? "striking altered the melody"
+                             : "strikes did not reproduce from the seed";
+    failures.push(`streams: ${why}`);
+    console.log(`FAIL  streams: ${why}`);
+  }
 }
 
 console.log();

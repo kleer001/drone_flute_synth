@@ -1,0 +1,382 @@
+{
+ "version": 2,
+ "loops": {
+  "dir": "loops",
+  "files": [
+   "A#4_loop.wav",
+   "A#5_loop.wav",
+   "C4_loop.wav",
+   "C5_loop.wav",
+   "C6_loop.wav",
+   "D4_loop.wav",
+   "D5_loop.wav",
+   "E4_loop.wav",
+   "E5_loop.wav",
+   "F#4_loop.wav",
+   "F#5_loop.wav",
+   "G#4_loop.wav",
+   "G5_loop.wav"
+  ]
+ },
+ "percussion": {
+  "cabasa": {
+   "dir": "strokes",
+   "samples": [
+    {
+     "file": "cabasa-hit-l1-v1.wav",
+     "stroke": "hit",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "cabasa-hit-l1-v2.wav",
+     "stroke": "hit",
+     "level": 1,
+     "variant": 2
+    },
+    {
+     "file": "cabasa-rub-l1-v1.wav",
+     "stroke": "rub",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "cabasa-rub-l1-v2.wav",
+     "stroke": "rub",
+     "level": 1,
+     "variant": 2
+    },
+    {
+     "file": "cabasa-rub-l2-v1.wav",
+     "stroke": "rub",
+     "level": 2,
+     "variant": 1
+    },
+    {
+     "file": "cabasa-rub-l2-v2.wav",
+     "stroke": "rub",
+     "level": 2,
+     "variant": 2
+    }
+   ]
+  },
+  "frame_drum": {
+   "dir": "strokes",
+   "samples": [
+    {
+     "file": "frame_drum-hand-l1-v1.wav",
+     "stroke": "hand",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "frame_drum-hit-l2-v1.wav",
+     "stroke": "hit",
+     "level": 2,
+     "variant": 1
+    },
+    {
+     "file": "frame_drum-hit-l2-v2.wav",
+     "stroke": "hit",
+     "level": 2,
+     "variant": 2
+    },
+    {
+     "file": "frame_drum-hit-l3-v1.wav",
+     "stroke": "hit",
+     "level": 3,
+     "variant": 1
+    },
+    {
+     "file": "frame_drum-hit-l3-v2.wav",
+     "stroke": "hit",
+     "level": 3,
+     "variant": 2
+    },
+    {
+     "file": "frame_drum-muted-l2-v1.wav",
+     "stroke": "muted",
+     "level": 2,
+     "variant": 1
+    },
+    {
+     "file": "frame_drum-muted-l2-v2.wav",
+     "stroke": "muted",
+     "level": 2,
+     "variant": 2
+    },
+    {
+     "file": "frame_drum-muted-l3-v1.wav",
+     "stroke": "muted",
+     "level": 3,
+     "variant": 1
+    },
+    {
+     "file": "frame_drum-muted-l3-v2.wav",
+     "stroke": "muted",
+     "level": 3,
+     "variant": 2
+    }
+   ]
+  },
+  "frame_drum_small": {
+   "dir": "strokes",
+   "samples": [
+    {
+     "file": "frame_drum_small-hand-l1-v1.wav",
+     "stroke": "hand",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "frame_drum_small-hit-l2-v1.wav",
+     "stroke": "hit",
+     "level": 2,
+     "variant": 1
+    },
+    {
+     "file": "frame_drum_small-hit-l2-v2.wav",
+     "stroke": "hit",
+     "level": 2,
+     "variant": 2
+    },
+    {
+     "file": "frame_drum_small-hit-l3-v1.wav",
+     "stroke": "hit",
+     "level": 3,
+     "variant": 1
+    },
+    {
+     "file": "frame_drum_small-hit-l3-v2.wav",
+     "stroke": "hit",
+     "level": 3,
+     "variant": 2
+    },
+    {
+     "file": "frame_drum_small-muted-l2-v1.wav",
+     "stroke": "muted",
+     "level": 2,
+     "variant": 1
+    },
+    {
+     "file": "frame_drum_small-muted-l2-v2.wav",
+     "stroke": "muted",
+     "level": 2,
+     "variant": 2
+    },
+    {
+     "file": "frame_drum_small-muted-l3-v1.wav",
+     "stroke": "muted",
+     "level": 3,
+     "variant": 1
+    },
+    {
+     "file": "frame_drum_small-muted-l3-v2.wav",
+     "stroke": "muted",
+     "level": 3,
+     "variant": 2
+    }
+   ]
+  },
+  "guiro": {
+   "dir": "strokes",
+   "samples": [
+    {
+     "file": "guiro-fast-l1-v1.wav",
+     "stroke": "fast",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "guiro-hit-l1-v1.wav",
+     "stroke": "hit",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "guiro-hit-l1-v2.wav",
+     "stroke": "hit",
+     "level": 1,
+     "variant": 2
+    },
+    {
+     "file": "guiro-med-l1-v1.wav",
+     "stroke": "med",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "guiro-slow-l1-v2.wav",
+     "stroke": "slow",
+     "level": 1,
+     "variant": 2
+    }
+   ]
+  },
+  "rain_stick": {
+   "dir": "strokes",
+   "samples": [
+    {
+     "file": "rain_stick-wash-l1-v1.wav",
+     "stroke": "wash",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "rain_stick-wash-l1-v2.wav",
+     "stroke": "wash",
+     "level": 1,
+     "variant": 2
+    },
+    {
+     "file": "rain_stick-wash-l1-v3.wav",
+     "stroke": "wash",
+     "level": 1,
+     "variant": 3
+    }
+   ]
+  },
+  "rattle": {
+   "dir": "strokes",
+   "samples": [
+    {
+     "file": "rattle-down-l1-v2.wav",
+     "stroke": "down",
+     "level": 1,
+     "variant": 2
+    },
+    {
+     "file": "rattle-down-l1-v3.wav",
+     "stroke": "down",
+     "level": 1,
+     "variant": 3
+    },
+    {
+     "file": "rattle-hit-l1-v1.wav",
+     "stroke": "hit",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "rattle-hit-l1-v2.wav",
+     "stroke": "hit",
+     "level": 1,
+     "variant": 2
+    },
+    {
+     "file": "rattle-up-l1-v1.wav",
+     "stroke": "up",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "rattle-up-l1-v4.wav",
+     "stroke": "up",
+     "level": 1,
+     "variant": 4
+    }
+   ]
+  },
+  "rattle_small": {
+   "dir": "strokes",
+   "samples": [
+    {
+     "file": "rattle_small-double_down-l1-v1.wav",
+     "stroke": "double_down",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "rattle_small-double_down-l1-v2.wav",
+     "stroke": "double_down",
+     "level": 1,
+     "variant": 2
+    },
+    {
+     "file": "rattle_small-double_up-l1-v1.wav",
+     "stroke": "double_up",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "rattle_small-double_up-l1-v2.wav",
+     "stroke": "double_up",
+     "level": 1,
+     "variant": 2
+    },
+    {
+     "file": "rattle_small-high_down-l1-v1.wav",
+     "stroke": "high_down",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "rattle_small-high_down-l1-v2.wav",
+     "stroke": "high_down",
+     "level": 1,
+     "variant": 2
+    },
+    {
+     "file": "rattle_small-high_up-l1-v1.wav",
+     "stroke": "high_up",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "rattle_small-high_up-l1-v2.wav",
+     "stroke": "high_up",
+     "level": 1,
+     "variant": 2
+    },
+    {
+     "file": "rattle_small-low_down-l1-v1.wav",
+     "stroke": "low_down",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "rattle_small-low_down-l1-v2.wav",
+     "stroke": "low_down",
+     "level": 1,
+     "variant": 2
+    },
+    {
+     "file": "rattle_small-low_up-l1-v1.wav",
+     "stroke": "low_up",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "rattle_small-low_up-l1-v2.wav",
+     "stroke": "low_up",
+     "level": 1,
+     "variant": 2
+    },
+    {
+     "file": "rattle_small-roll-l1-v1.wav",
+     "stroke": "roll",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "rattle_small-roll-l1-v2.wav",
+     "stroke": "roll",
+     "level": 1,
+     "variant": 2
+    },
+    {
+     "file": "rattle_small-slap-l1-v1.wav",
+     "stroke": "slap",
+     "level": 1,
+     "variant": 1
+    },
+    {
+     "file": "rattle_small-slap-l1-v2.wav",
+     "stroke": "slap",
+     "level": 1,
+     "variant": 2
+    }
+   ]
+  }
+ }
+}

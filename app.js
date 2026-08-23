@@ -12,7 +12,7 @@ const LOOKAHEAD_S = 4.0;      // keep this much music scheduled ahead
 const TICK_MS = 250;
 
 import { Instrument } from "./engine/instrument.js";
-import { readLoopPoints } from "./engine/samples.js";
+import { parseManifest, readLoopPoints } from "./engine/samples.js";
 import { INSTRUMENT } from "./engine/profile.js";
 import { CHOICE_PARAMS } from "./engine/moods.js";
 
@@ -70,12 +70,25 @@ const $ = (id) => document.getElementById(id);
 
 /* ---------- transport ---------- */
 
-/* The loops are the only thing still fetched. Relative, so the page works from
-   a project subpath as well as from a domain root. */
+/* The recordings are the only thing still fetched. Relative, so the page works
+   from a project subpath as well as from a domain root.
+ *
+ * The manifest names two kinds of pool -- sustained loops and percussion
+ * one-shots -- and is parsed through the engine's own reader rather than
+ * indexed here, so the page and the acceptance gate cannot disagree about what
+ * a pool is. */
 async function loadManifest() {
-  const res = await fetch("loops/manifest.json");
-  if (!res.ok) throw new Error(`loops/manifest.json: ${res.status}`);
-  return (await res.json()).files;
+  const res = await fetch("manifest.json");
+  if (!res.ok) throw new Error(`manifest.json: ${res.status}`);
+  return parseManifest(await res.json());
+}
+
+/* `loops/A#4_loop.wav` -> `loops/A%234_loop.wav`. An unescaped # is a
+   fragment, so the request would arrive as `loops/A`. The file name is escaped
+   and the separators are not, because they are the path. */
+function urlFor(path) {
+  const cut = path.lastIndexOf("/");
+  return path.slice(0, cut + 1) + encodeURIComponent(path.slice(cut + 1));
 }
 
 /* ---------- the audio graph ----------
@@ -142,17 +155,15 @@ function setWet(v) {
 /* ---------- loading ---------- */
 
 async function loadBuffers() {
-  const names = engine.loopFiles();
-  await Promise.all(names.map(async (name) => {
-    // A#4_loop.wav and friends: an unescaped # is a fragment, so the request
-    // would arrive as loops/A.
-    const res = await fetch(`loops/${encodeURIComponent(name)}`);
-    if (!res.ok) throw new Error(`${name}: ${res.status}`);
+  const paths = engine.loopFiles();
+  await Promise.all(paths.map(async (path) => {
+    const res = await fetch(urlFor(path));
+    if (!res.ok) throw new Error(`${path}: ${res.status}`);
     const raw = await res.arrayBuffer();
     // Read the loop points BEFORE decoding: decodeAudioData detaches the
     // buffer, and it discards the smpl chunk they live in either way.
-    const points = readLoopPoints(raw);
-    loops[name] = { ...points, buffer: await ctx.decodeAudioData(raw) };
+    const points = readLoopPoints(raw, path);
+    loops[path] = { ...points, buffer: await ctx.decodeAudioData(raw) };
   }));
 }
 
@@ -270,10 +281,10 @@ async function start() {
     // An AudioContext may only begin from a gesture, so everything that needs
     // one is built here rather than at load.
     ctx = new AudioContext();
-    note("loading loops…");
-    const files = await loadManifest();
+    note("loading recordings…");
+    const manifest = await loadManifest();
     const url = new URLSearchParams(location.search);
-    engine = new Instrument(files, {
+    engine = new Instrument(manifest, {
       mood: url.get("mood") || "contemplative",
       key: url.get("key") || "C",
       mode: url.get("mode") || "minor",

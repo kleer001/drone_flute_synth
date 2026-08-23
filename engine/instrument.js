@@ -15,10 +15,23 @@ import * as scales from "./scales.js";
 // The drone sits under the lead rather than beside it.
 const VOICE_GAIN = { drone: 0.85, lead: 1.0 };
 
+/* Percussion draws from its own random stream, not the melody's.
+ *
+ * Sharing one would mean that striking a drum consumed a number the phrase
+ * generator was going to use, so turning percussion on would rewrite the tune
+ * -- and a seed would no longer name one performance. The constant is
+ * arbitrary; all it has to do is be one, so that the two streams are
+ * reproducible from the same seed without ever being the same stream. */
+const STRIKE_SEED_OFFSET = 0x5f356495;
+
 export class Instrument {
-  constructor(files, { mood = "contemplative", seed = 1,
-                       key = "C", mode = "minor" } = {}) {
-    this.samples = new SampleSet(files, INSTRUMENT.soundingOffset);
+  /* `manifest` is what `samples.parseManifest` returned: the loops, and the
+     percussion pools if any have been authored. */
+  constructor(manifest, { mood = "contemplative", seed = 1,
+                          key = "C", mode = "minor" } = {}) {
+    this.loopDir = manifest.loops.dir;
+    this.percussion = manifest.percussion ?? {};
+    this.samples = new SampleSet(manifest.loops.files, INSTRUMENT.soundingOffset);
     this.leadLow = scales.midiOf(INSTRUMENT.leadLow);
     this.leadHigh = scales.midiOf(INSTRUMENT.leadHigh);
 
@@ -56,7 +69,9 @@ export class Instrument {
     const out = {};
     for (let m = low; m <= high; m++) {
       const [file, cents] = this.samples.voiceFor(m);
-      out[scales.nameOf(m)] = { file, cents };
+      // The path rather than the bare name, so a voice and a stroke are
+      // addressed the same way and the page can key one table by both.
+      out[scales.nameOf(m)] = { file: `${this.loopDir}/${file}`, cents };
     }
     return out;
   }
@@ -64,6 +79,29 @@ export class Instrument {
   /* Which files the voices actually reference, so the page loads only those. */
   loopFiles() {
     return [...new Set(Object.values(this.voices).map((v) => v.file))];
+  }
+
+  /* Every percussion file, across every pool. */
+  strokeFiles() {
+    const out = new Set();
+    for (const pool of Object.values(this.percussion)) {
+      for (const f of pool.files()) out.add(f);
+    }
+    return [...out].sort();
+  }
+
+  /* One recording of a stroke: {path, stroke, level}.
+   *
+   * The pool decides which force layer and which variation, because that is a
+   * fact about what was recorded; this only supplies the stream it draws
+   * from. */
+  strike(pool, stroke, velocity) {
+    const set = this.percussion[pool];
+    if (!set) {
+      const have = Object.keys(this.percussion).sort().join(", ") || "none";
+      throw new Error(`no percussion pool ${pool}; have ${have}`);
+    }
+    return set.pick(stroke, velocity, this._strikes);
   }
 
   /* [lead note names, drone note names, tonic] for the current key and mode. */
@@ -91,6 +129,9 @@ export class Instrument {
     const [lead, drones, root] = this._notes();
     const mood = moods.fromWeights(p.mood, p);
     if (restart) {
+      // A new seed means "play something else", and that has to include which
+      // recordings the percussion reaches for.
+      this._strikes = new Rng(Math.trunc(p.seed) ^ STRIKE_SEED_OFFSET);
       this.performer = new Performer(
         INSTRUMENT, mood, new Rng(Math.trunc(p.seed)),
         lead, drones, root, p.breath_spread_s, p.inhale_s);
@@ -141,6 +182,11 @@ export class Instrument {
       meter: { bpm: meter.bpm, beats_per_measure: meter.beatsPerMeasure,
                beat_s: meter.beatS, measure_s: meter.measureS },
       voices: this.voices,
+      // What was recorded for each pool: its strokes, the force layers each
+      // was captured at, and how many variations back a layer. The page needs
+      // this to build a control before it has loaded a single sample.
+      percussion: Object.fromEntries(Object.entries(this.percussion)
+        .map(([name, pool]) => [name, pool.describe()])),
       // The breath envelope belongs to the breath, not to the page, so the
       // numbers come from there rather than being restated in the audio graph.
       attack_s: BREATH_ATTACK_S,
