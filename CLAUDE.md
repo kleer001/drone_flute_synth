@@ -1,10 +1,10 @@
 # drone_flute_synth
 
 A lead voice over a drone, playing an endless generative performance in the
-browser. **The whole instrument is a static site in `docs/`** — engine included
-— published at https://kleer001.github.io/drone_flute_synth/docs/ via GitHub
-Pages, which serves the **repo root** (`main`, `/`). That is why the app sits at
-the `/docs/` subpath and every link carries it.
+browser. **The whole instrument is a static site at the repo root** — engine
+included — published at https://kleer001.github.io/drone_flute_synth/ by GitHub
+Pages, source `main` / `/`. The page files live beside the tooling deliberately:
+Pages serves the root, so that is where they have to be.
 
 Key and scale are controls: twelve keys, twelve scales, plus three optional
 drone slots each holding a semitone offset from the tonic.
@@ -13,16 +13,16 @@ drone slots each holding a semitone offset from the tonic.
 
 | Path | What it is |
 |---|---|
-| `docs/index.html`, `docs/app.js`, `docs/style.css` | The page: the Web Audio graph, the controls, the lookahead scheduler |
-| `docs/engine/scales.js` | Keys and scales — semitone offsets from a tonic, and the pitches they yield in a range |
-| `docs/engine/melody.js` | The motif engine — the part that makes it musical |
-| `docs/engine/breath.js` | The breath cycle: phrases resolved to bar lines, plus `Meter` |
-| `docs/engine/moods.js` | Parameter set: weights, bounds, whole-set validation, drone defaults |
-| `docs/engine/profile.js` | Everything true of *these recordings*: sounding offset, lead range, drone octave, meter, makeup gain, provenance |
-| `docs/engine/samples.js` | `smpl`-chunk parsing and nearest-recording lookup |
-| `docs/engine/instrument.js` | The seam the page talks to: params in, breaths out |
-| `docs/engine/rng.js` | Seeded PRNG, plus round-half-to-even and non-negative modulo |
-| `docs/loops/` | The authored loops, **committed** — without them there is no player to link to |
+| `index.html`, `app.js`, `style.css` | The page: the Web Audio graph, the controls, the lookahead scheduler |
+| `engine/scales.js` | Keys and scales — semitone offsets from a tonic, and the pitches they yield in a range |
+| `engine/melody.js` | The motif engine — the part that makes it musical |
+| `engine/breath.js` | The breath cycle: phrases resolved to bar lines, plus `Meter` |
+| `engine/moods.js` | Parameter set: weights, bounds, whole-set validation, drone defaults |
+| `engine/profile.js` | Everything true of *these recordings*: sounding offset, lead range, drone octave, meter, makeup gain, provenance |
+| `engine/samples.js` | `smpl`-chunk parsing and nearest-recording lookup |
+| `engine/instrument.js` | The seam the page talks to: params in, breaths out |
+| `engine/rng.js` | Seeded PRNG, plus round-half-to-even and non-negative modulo |
+| `loops/` | The authored loops, **committed** — without them there is no player to link to |
 | `check.mjs` | Acceptance gate for the engine (node, no browser) |
 | `tools/` | Build-time sample work in Python: inventory, loop authoring, loop QA, manifest |
 
@@ -32,11 +32,11 @@ scipy and its own `dsp` module.
 ## Running
 
 ```bash
-./run.sh                 # serves docs/ on the first free port at or above 8740
+./run.sh                 # serves the repo root on the first free port from 8740
 ./run.sh --rebuild       # re-author the loops from VCSL first (needs the venv)
 
 node check.mjs --key F# --mode blues     # the engine gate
-python3 tools/loop_qa.py docs/loops/*.wav  # the sample gate
+python3 tools/loop_qa.py loops/*.wav  # the sample gate
 ```
 
 `?key=`, `?mode=`, `?mood=` and `?seed=` set the page's starting state.
@@ -96,10 +96,10 @@ There is no unit-test suite. Verification is measurement, and there are two
 gates: `tools/loop_qa.py` for the samples, `check.mjs` for the engine. A change
 to loop or DSP code is unverified until it has been run against a real sample
 folder and the pass count reported. A change to the audio graph or the page is
-unverified until a browser has actually played it — serve `docs/` and drive it
+unverified until a browser has actually played it — serve the repo root and drive it
 headlessly.
 
-Note that `docs/app.js` is an ES module, so its internals are **not** reachable
+Note that `app.js` is an ES module, so its internals are **not** reachable
 as globals from an injected script. To measure audio, import the engine modules
 dynamically and render through an `OfflineAudioContext`; that exercises the same
 voices, loop points and detune the live graph uses.
@@ -119,7 +119,7 @@ Measured, and worth not re-deriving: three drones in A rendered 440.37 / 657.53
 - The engine uses round-half-to-even (`rng.js`'s `round`), not `Math.round`.
   The grid arithmetic lands on exact halves often enough that half-up shows as
   a rhythmic lean.
-- Rebuilding loops must also refresh `docs/loops/manifest.json` — the browser
+- Rebuilding loops must also refresh `loops/manifest.json` — the browser
   cannot list a directory, and a stale manifest is a silently missing note.
   `run.sh --rebuild` does both, and `check.mjs` fails if they disagree.
 - Loop files hold the loop **twice**, with the loop points on the second copy.

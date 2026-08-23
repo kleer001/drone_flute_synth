@@ -4,16 +4,15 @@ __pycache__/
 venv/
 *.egg-info/
 
-# Sample working directories — audio is fetched and built, not committed…
+# Fetched and built audio is not committed…
 samples/
-loops/
-*.wav
 build/
+*.wav
 
-# …except the authored loops the published site serves. They are small (3.3 MB),
-# derived from CC0 source, and without them there is no player to link to.
-!docs/loops/
-!docs/loops/*.wav
+# …except loops/, which the published site serves. Small (3.3 MB), derived from
+# CC0 source, and without them there is no player to link to. Note `loops/`
+# itself must not be ignored, or the re-include below could not reach into it.
+!loops/*.wav
 tmp/
 vendor/
 .playwright-mcp/

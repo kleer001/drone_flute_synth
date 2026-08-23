@@ -2,10 +2,10 @@ fresh
 
 ## Summary
 
-**The instrument is a static site in `docs/`** — engine included — meant for
-GitHub Pages at https://kleer001.github.io/drone_flute_synth/docs/ — Pages
-serves the repo root (`main`, `/`), so the app is at the `/docs/` subpath. No Python at runtime; `tools/` is a build step only. `./run.sh` just
-serves `docs/`.
+**The instrument is a static site at the repo root** — engine included — live
+at https://kleer001.github.io/drone_flute_synth/ via GitHub Pages (`main`, `/`).
+The page files sit beside the tooling because that is what root-serving needs.
+No Python at runtime; `tools/` is a build step only.
 
 **Key and scale are now controls.** Twelve keys x twelve scales, plus three
 optional drone slots each holding a semitone offset from the tonic. The fixed
@@ -25,7 +25,7 @@ do not carry over.
 (2.1 GB of AppImage and sandbox homes included).
 
 A `/simplify` pass then ran over the port. The two findings that mattered:
-`check.mjs` was scanning `docs/loops/` while the page reads `manifest.json`, so
+`check.mjs` was scanning `loops/` while the page reads `manifest.json`, so
 the gate was blind to exactly the drift the manifest exists to prevent; and
 `loopfind.py` tiled each loop 3x with `loopEnd` at 2/3, so a third of every
 shipped file was fetched and decoded unheard. Both fixed — payload 4.9 -> 3.3 MB,
@@ -59,14 +59,14 @@ _(none)_
 
 ## Context
 
-**The runner.** `./run.sh` serves `docs/` on the first free port at or above
-8740 via `http.server`. It only builds loops when `docs/loops` is empty or you
+**The runner.** `./run.sh` serves the repo root on the first free port at or above
+8740 via `http.server`. It only builds loops when `loops/` is empty or you
 pass `--rebuild`. Key/scale/mood/seed are page controls and URL params
 (`?key=A&mode=phrygian`), not CLI flags.
 
-**The loops are committed** (13 files, 3.3 MB, `docs/loops/`), which reverses
+**The loops are committed** (13 files, 3.3 MB, `loops/`), which reverses
 the old "sample audio is never committed" rule — a static player has to ship
-its audio. They are CC0-derived. `docs/loops/manifest.json` lists them because
+its audio. They are CC0-derived. `loops/manifest.json` lists them because
 a browser cannot list a directory; `tools/manifest.py` regenerates it and
 `check.mjs` fails if it disagrees with the directory.
 

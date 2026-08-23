@@ -12,13 +12,13 @@
  * pass a timing regression without noticing.
  */
 import { readdirSync, readFileSync } from "node:fs";
-import { Instrument } from "./docs/engine/instrument.js";
-import { noteSequence } from "./docs/engine/breath.js";
-import { LOOP_SUFFIX } from "./docs/engine/samples.js";
-import * as scales from "./docs/engine/scales.js";
+import { Instrument } from "./engine/instrument.js";
+import { noteSequence } from "./engine/breath.js";
+import { LOOP_SUFFIX } from "./engine/samples.js";
+import * as scales from "./engine/scales.js";
 
 const BREATHS = 60;
-const LOOPS_DIR = "docs/loops";
+const LOOPS_DIR = "loops";
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);

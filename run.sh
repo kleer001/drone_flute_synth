@@ -7,10 +7,10 @@
 #   ./run.sh --rebuild      re-author the loops from the VCSL samples
 #   ./run.sh --no-open      serve, but do not open a browser
 #
-# The instrument is a static site in docs/ -- the same files GitHub Pages
-# serves, so what you hear here is what the public page plays. Python is needed
-# only to author loops, which is a build step you can skip: the authored loops
-# are committed.
+# The instrument is a static site at the repo root -- the same files GitHub
+# Pages serves, so what you hear here is what the public page plays. Python is
+# needed only to author loops, which is a build step you can skip: the authored
+# loops are committed.
 #
 # Key, scale, mood and seed are controls on the page, and can also be set from
 # the URL:  ?key=A&mode=phrygian&mood=restless&seed=42
@@ -23,8 +23,8 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENDOR="$REPO/vendor"
 BUILD="$REPO/build"
 LOOPS="$BUILD/loops"
-SITE="$REPO/docs"
-SITE_LOOPS="$SITE/loops"
+SITE="$REPO"
+SITE_LOOPS="$REPO/loops"
 VENV="$REPO/.venv"
 PY="$VENV/bin/python"
 
