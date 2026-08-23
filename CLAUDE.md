@@ -2,8 +2,9 @@
 
 A lead voice over a drone, playing an endless generative performance in the
 browser. **The whole instrument is a static site in `docs/`** — engine included
-— published at https://kleer001.github.io/drone_flute_synth/ via GitHub Pages
-(source: `main` branch, `/docs` folder).
+— published at https://kleer001.github.io/drone_flute_synth/docs/ via GitHub
+Pages, which serves the **repo root** (`main`, `/`). That is why the app sits at
+the `/docs/` subpath and every link carries it.
 
 Key and scale are controls: twelve keys, twelve scales, plus three optional
 drone slots each holding a semitone offset from the tonic.

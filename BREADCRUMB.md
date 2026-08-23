@@ -3,8 +3,8 @@ fresh
 ## Summary
 
 **The instrument is a static site in `docs/`** — engine included — meant for
-GitHub Pages at https://kleer001.github.io/drone_flute_synth/ (source: `main`,
-`/docs`). No Python at runtime; `tools/` is a build step only. `./run.sh` just
+GitHub Pages at https://kleer001.github.io/drone_flute_synth/docs/ — Pages
+serves the repo root (`main`, `/`), so the app is at the `/docs/` subpath. No Python at runtime; `tools/` is a build step only. `./run.sh` just
 serves `docs/`.
 
 **Key and scale are now controls.** Twelve keys x twelve scales, plus three

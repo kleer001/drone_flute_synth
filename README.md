@@ -1,6 +1,6 @@
 # drone_flute_synth
 
-### ▶ [**Play it**](https://kleer001.github.io/drone_flute_synth/)
+### ▶ [**Play it**](https://kleer001.github.io/drone_flute_synth/docs/)
 
 A flute that never stops playing. One voice holds a drone underneath, another
 wanders around on top, and it won't play you the same phrase twice in a row.
@@ -8,9 +8,9 @@ wanders around on top, and it won't play you the same phrase twice in a row.
 It runs in your browser. Nothing to install, and the whole thing is 3.3 MB.
 
 Start it somewhere:
-[A phrygian](https://kleer001.github.io/drone_flute_synth/?key=A&mode=phrygian) ·
-[F# blues, restless](https://kleer001.github.io/drone_flute_synth/?key=F%23&mode=blues&mood=restless) ·
-[C whole tone, half asleep](https://kleer001.github.io/drone_flute_synth/?key=C&mode=whole%20tone&mood=sleep)
+[A phrygian](https://kleer001.github.io/drone_flute_synth/docs/?key=A&mode=phrygian) ·
+[F# blues, restless](https://kleer001.github.io/drone_flute_synth/docs/?key=F%23&mode=blues&mood=restless) ·
+[C whole tone, half asleep](https://kleer001.github.io/drone_flute_synth/docs/?key=C&mode=whole%20tone&mood=sleep)
 
 ## What it sounds like
 
