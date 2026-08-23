@@ -22,6 +22,16 @@ button, input, select, output { font: inherit; color: inherit; }
 }
 .transport .run:hover { border-color: var(--ink); }
 .lamp { width: .5rem; height: .5rem; border-radius: 50%; background: var(--track); flex: none; }
+
+/* ---- first run ---- */
+/* Sits under the transport, pointing at the button it names, and is removed
+   for good the first time playback starts -- a hint you have already acted on
+   is clutter. */
+#firstrun {
+  margin: 0; padding: .5rem .6rem;
+  background: #fdf3e3; border-bottom: 1px solid #e6d3ae; color: #7a4f00;
+}
+#firstrun b { font-style: normal; }
 .lamp.on { background: var(--live); }
 .meta { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .meta.grow { overflow: hidden; text-overflow: ellipsis; }

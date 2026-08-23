@@ -16,6 +16,9 @@
   <span class="meta grow" id="now"></span>
 </div>
 
+<p id="firstrun">Press <b>&#9654;</b> to start. The page makes no sound until
+  you do.</p>
+
 <main>
   <h1 id="title">drone flute</h1>
 
@@ -46,8 +49,8 @@
       <button id="revert" disabled>Revert</button>
       <span id="status" class="status"></span>
     </div>
-    <p class="hint">Nothing you move here sounds until you submit, and then it
-      lands on a breath boundary. The breaths already scheduled play out first.</p>
+    <p class="hint">Move anything here, then press Submit. The change starts on
+      the next breath, so whatever is playing now finishes first.</p>
   </section>
 
   <section data-panel="room" hidden>
@@ -72,8 +75,7 @@
         <input type="range" id="master" min="0" max="1" step="0.01" value="0.8">
         <output id="master-out"></output></div>
     </div>
-    <p class="hint">Ours, not the engine's — these move while it sounds, with
-      no round trip.</p>
+    <p class="hint">These change the sound as you drag them. No Submit needed.</p>
   </section>
 
   <p id="note" class="note"></p>

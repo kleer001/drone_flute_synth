@@ -287,6 +287,9 @@ async function start() {
   }
   await ctx.resume();
   running = true;
+  // The notice has done its job the moment they press play. Optional, because
+  // start() runs again on every un-stop and the notice is only there once.
+  $("firstrun")?.remove();
   cursor = ctx.currentTime + 0.15;
   $("run").textContent = "■";
   $("lamp").classList.add("on");
