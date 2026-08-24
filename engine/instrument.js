@@ -11,7 +11,8 @@ import { SampleSet } from "./samples.js";
 import { INSTRUMENT } from "./profile.js";
 import * as moods from "./moods.js";
 import * as scales from "./scales.js";
-import { rhythm, cycleUnits, washStroke, DRUM_POOL, RATTLE_POOL, WASH_POOL,
+import { rhythm, cycleUnits, washStroke, moodScale,
+         DRUM_POOL, RATTLE_POOL, WASH_POOL,
          DRUM_POOLS, RATTLE_POOLS, WASH_POOLS,
          WASH_MIN_GAP, WASH_VELOCITY } from "./percussion.js";
 
@@ -242,6 +243,9 @@ export class Instrument {
       weight_fields: moods.WEIGHT_FIELDS,
       pools: this.pools,
       pool_choices: this.poolChoices,
+      // Applied at the percussion bus, not per strike: it is a balance against
+      // the tune, not a property of any recording.
+      percussion_scale: moodScale(this.params),
       moods: Object.keys(moods.MOODS).sort(),
       preset_weights: moods.presetWeights(),
       keys: scales.NOTE_NAMES,

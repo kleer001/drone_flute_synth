@@ -18,6 +18,7 @@ import { rasterize, MIN_ONSET_GAP_S } from "./engine/melody.js";
 import { LOOP_SUFFIX, parseManifest } from "./engine/samples.js";
 import { BLOCK_BREATHS } from "./engine/song.js";
 import { WASH_MIN_GAP } from "./engine/percussion.js";
+import { MOODS as moodsOf } from "./engine/moods.js";
 import { Rng } from "./engine/rng.js";
 import * as scales from "./engine/scales.js";
 
@@ -542,6 +543,46 @@ if (!pools.length) {
   } else {
     failures.push(`rhythm: ${bad[0]}`);
     console.log(`FAIL  rhythm: ${bad[0]}`);
+  }
+}
+
+// ---- percussion balance ------------------------------------------------
+{
+  const bad = [];
+  const scaleOf = (opts, changes) => {
+    const i = new Instrument(manifest, { seed: 1, key, mode, ...opts });
+    if (changes) i.update(changes);
+    return i.describe().percussion_scale;
+  };
+  const presets = Object.keys(moodsOf).sort((a, b) =>
+    moodsOf[a].notes_per_breath - moodsOf[b].notes_per_breath);
+  const scales = presets.map((m) => scaleOf({ mood: m }));
+
+  // Busier tune, louder percussion -- monotone, or the balance would lurch.
+  for (let i = 1; i < scales.length; i++) {
+    if (scales[i] < scales[i - 1]) {
+      bad.push(`${presets[i]} scales below ${presets[i - 1]}`);
+    }
+  }
+  if (Math.abs(scaleOf({ mood: "contemplative" }) - 1) > 1e-9) {
+    bad.push("contemplative is the reference and must scale by 1");
+  }
+  // It reads the weights, not the name: dragging notes/breath moves it.
+  const still = scaleOf({ mood: "sleep" });
+  const dragged = scaleOf({ mood: "sleep" }, { notes_per_breath: 11 });
+  if (!(dragged > still * 1.3)) bad.push("the scale ignored notes_per_breath");
+  const span = 20 * Math.log10(Math.max(...scales) / Math.min(...scales));
+  // The flute itself spans 6.7 dB across the presets, so anything far from
+  // that is compensating for something other than the tune's loudness.
+  if (span < 4 || span > 9) bad.push(`scale spans ${span.toFixed(1)} dB, expected ~7`);
+
+  if (!bad.length) {
+    console.log(`PASS  balance: percussion scales ${scales[0].toFixed(2)}-` +
+                `${scales[scales.length - 1].toFixed(2)} (${span.toFixed(1)} dB) with the ` +
+                `tune's note rate, monotone, and follows the weights not the mood's name`);
+  } else {
+    failures.push(`balance: ${bad[0]}`);
+    console.log(`FAIL  balance: ${bad[0]}`);
   }
 }
 

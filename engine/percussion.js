@@ -1,4 +1,6 @@
 import { round } from "./rng.js";
+import { MOODS } from "./moods.js";
+import { INSTRUMENT } from "./profile.js";
 
 export const DRUM_POOL = "frame_drum";
 export const RATTLE_POOL = "rattle";
@@ -125,3 +127,34 @@ export function rhythm({ motif, notes, meter, lengthS, inhaleS, clock,
 /* How far the performance clock advances over one breath cycle. */
 export const cycleUnits = (meter, lengthS, inhaleS) =>
   round(lengthS / meter.unitS) + round(inhaleS / meter.unitS);
+
+/* How loud percussion sits, given how busy the tune is.
+ *
+ * Measured by rendering 60 s of flute per preset: its RMS tracks note rate at
+ * 6.4 dB per decade, within 0.9 dB across all six. The flute spans only 6.7 dB
+ * from `sleep` to `restless`, but percussion does not move at all on its own,
+ * so a fixed level leaves the drum 3 dB more present in the quiet moods than
+ * the busy ones.
+ *
+ * This is only how loud percussion sits, not how much of it there is --
+ * `drum_density`, `rattle_scale` and `wash_rate` decide that, and they are
+ * mood weights too. And it reads the live weights rather than the mood's name,
+ * so dragging `notes / breath` moves the balance the same way choosing a
+ * busier mood does.
+ */
+const FLUTE_DB_PER_DECADE = 6.44;
+
+const activityOf = ({ notes_per_breath, breath_mean_s, inhale_s }) =>
+  Math.max(1e-3, Number(notes_per_breath) * 1.4 /
+                 Math.max(0.1, Number(breath_mean_s) + Number(inhale_s)));
+
+// Contemplative is the reference, so it scales by 1 and a level set there
+// means what it always did.
+const REFERENCE_ACTIVITY = activityOf({
+  notes_per_breath: MOODS.contemplative.notes_per_breath,
+  breath_mean_s: MOODS.contemplative.breath_mean_s,
+  inhale_s: INSTRUMENT.inhaleS,
+});
+
+export const moodScale = (params) =>
+  Math.pow(activityOf(params) / REFERENCE_ACTIVITY, FLUTE_DB_PER_DECADE / 20);
