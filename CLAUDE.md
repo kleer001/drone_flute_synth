@@ -1,22 +1,26 @@
 # drone_flute_synth
 
-A lead voice over a drone, playing an endless generative performance in the
-browser. **The whole instrument is a static site at the repo root** — engine
-included — published at https://kleer001.github.io/drone_flute_synth/ by GitHub
-Pages, source `main` / `/`. The page files sit beside the tooling because Pages
-serves the root, so that is where they are.
+A lead voice over a drone, with a drum, a rattle and a rain stick around it,
+playing an endless generative performance in the browser. **The whole
+instrument is a static site at the repo root** — engine included — published at
+https://kleer001.github.io/drone_flute_synth/ by GitHub Pages, source `main` /
+`/`. The page files sit beside the tooling because Pages serves the root, so
+that is where they are.
 
 Key and scale are controls: twelve keys, twelve scales, plus three optional
-drone slots each holding a semitone offset from the tonic.
+drone slots each holding a semitone offset from the tonic. The performance runs
+free by default; song form arranges it into repeating blocks instead.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `index.html`, `app.js`, `style.css` | The page: the Web Audio graph, the controls, the lookahead scheduler |
+| `index.html`, `app.js`, `style.css` | The page: the Web Audio graph, the controls, the mixer and effects, the lookahead scheduler |
 | `engine/scales.js` | Keys and scales — semitone offsets from a tonic, and the pitches they yield in a range |
 | `engine/melody.js` | The motif engine — the part that makes it musical |
 | `engine/breath.js` | The breath cycle: phrases resolved to bar lines, plus `Meter` |
+| `engine/percussion.js` | The rhythm layers: which stroke serves which role, the drum's hocket, the rattle's cell and fill |
+| `engine/song.js` | Song form: blocks of a call and its answer, arranged so none follows itself |
 | `engine/moods.js` | Parameter set: weights, bounds, whole-set validation, drone defaults |
 | `engine/profile.js` | Everything true of *these recordings*: sounding offset, lead range, drone octave, meter, makeup gain, provenance |
 | `engine/samples.js` | The recordings: RIFF chunk parsing, the manifest reader, and the two pools — `SampleSet` by pitch, `StrokeSet` by stroke |
@@ -42,7 +46,8 @@ python3 tools/loop_qa.py loops/*.wav      # the loop gate
 python3 tools/stroke_qa.py strokes/*.wav  # the one-shot gate
 ```
 
-`?key=`, `?mode=`, `?mood=` and `?seed=` set the page's starting state.
+`?key=`, `?mode=`, `?mood=` and `?seed=` set the page's starting state, as do
+`?song=1`, `?blocks=`, `?repeats=`, `?drum=1`, `?rattle=1` and `?wash=1`.
 
 ## How it fits together
 
@@ -129,8 +134,42 @@ re-authoring a sample.
 mean a strike consumed a number the phrase generator was going to use, so
 turning a drum on would rewrite the tune and a seed would no longer name one
 performance. `Instrument` seeds a second `Rng` from the same seed offset by a
-constant; `check.mjs` asserts that 320 strikes change no note of 40 breaths and
-that the strikes themselves reproduce.
+constant; `check.mjs` asserts that several hundred strikes change no note of
+40 breaths and that the strikes themselves reproduce.
+
+**Each rhythm layer stands in a different relation to the tune, and that is
+the whole design.** The drum *answers* it: `hocket` reduces the breath's notes
+to the grid, takes the empty slots inside the span the tune occupies, and
+spends a fraction of them strongest-first, so a strike never doubles an onset —
+`check.mjs` asserts zero doubled onsets over 60 breaths. The rattle *references*
+it: `timelineCell` takes the motif's own durations, stretches them by
+`rattle_scale`, and runs the result against a free performance clock that
+crosses the bar line and plays on through the inhale, which is what gives a
+free melody something to be heard against. The rain stick *smears*: one wash,
+rarely, eight seconds of grains held apart by `WASH_MIN_GAP` breaths so two
+never read as one gesture.
+
+**The rattle's fill adds; it never takes away.** A player gets busier by
+subdividing, not by skipping, so `rattle_fill` only places strokes in the gaps
+*between* the cell's onsets — the figure itself sounds identically at every
+setting, and at 1 every unit of the grid sounds with the cell accented on top.
+Thinning the cell instead would eat the one thing the layer is for; how sparse
+the figure is, is `rattle_scale`.
+
+The fill's velocity is per pool, and that is not a preference. Strokes are
+levelled within themselves and never against each other, so what a pool's
+second stroke was recorded at carries into the mix: at one velocity the
+cabasa's rub arrives about 6 dB *over* its own hit while the rattle's up-stroke
+sits 4 dB under. The velocities in `RATTLE_STROKE_ROLES` were solved against
+the measured loudness to put every pool 4 dB under its own softest cell stroke,
+and `check.mjs` recomputes that margin rather than trusting the numbers.
+
+**A song is blocks, and a block is a call and its answer.** `song.js` orders
+block *indices*, and each one expands to both of its breaths, so an answer can
+never leave its call; the arrangement refuses to place a block twice running,
+moving an offender to the back and reshuffling when that locks at the tail. It
+draws from a third stream seeded off the same seed, so turning song form on
+rearranges the performance without changing what the breaths themselves are.
 
 **Loop points are read before decoding.** `decodeAudioData` discards the `smpl`
 chunk *and* detaches the ArrayBuffer, and a buffer whose loop points went
@@ -159,6 +198,15 @@ plus ornaments sitting a little under the note they decorate. Drift, swell and
 breath-pressure variation were tried and removed: they read as slop, and on a
 real duct flute louder would also mean sharper.
 
+**The inhale is a count of sixteenths, and a beat is the floor a mood is
+written at.** The cycle is whole bars and the inhale is subtracted from it, so
+the phrase length is the remainder and need not land on a beat. The floor is
+not arithmetic but the rattle: it runs on the eighth-note grid, so a gap
+shorter than a beat is at most one slot of it and the layer stops reading as
+indifferent to the breath — measured, a two-sixteenth inhale put no rattle
+stroke in the gap across 60 breaths. Shorter is still the control's to ask for;
+the range starts at one sixteenth.
+
 **Drones are three optional slots**, each a semitone offset from the tonic, so a
 fifth is +7 in every scale and a drone can sit deliberately outside the one
 being played. They share one gain stage scaled by 1/sqrt(n).
@@ -167,6 +215,15 @@ being played. They share one gain stage scaled by 1/sqrt(n).
 the ranges, the menus, the voices *and* the envelope times and voice gains. A
 field omitted there surfaces as `NaN` deep in an `AudioParam` call, not as a
 missing-property error.
+
+**The mixer is one channel per instrument, not one wet/dry stage.** Each of
+the five runs dry to the master and taps a send to the reverb and to the delay,
+which is what lets the drum sit close while the drone sits far back in the same
+room. `MIX` is the only place a channel is written down and the strips are
+built from it, so a channel cannot exist in the graph without a strip to move
+it. Tone sits after the master rather than before the sends, so a darker room
+darkens the tails too. Only the percussion channels skip the sample set's
+makeup gain, because only the loops were recorded quietly enough to need it.
 
 **Facts about the recordings live in `profile.js`, not in the audio graph.**
 Makeup gain is the example that got this wrong once: it is a compensation for
@@ -242,8 +299,11 @@ Measured, and worth not re-deriving: three drones in A rendered 440.37 / 657.53
 
 ## Scope
 
-Flutes and percussion, at present — the percussion pools are authored and
-gated, and nothing plays them yet. No physical instruments are recorded;
-samples come from VCSL (CC0). Playback is live; there is no rendering to file.
-There is no vibrato, though `detune` is an automatable `AudioParam`, so that is
-a choice rather than a limit.
+Five voices: a lead flute, up to three drones sharing one stage, a drum, a
+rattle and a rain stick. The flute and the drone come from one pitched sample
+set; the three rhythm layers each draw from a pool of one-shots, and the drum
+and the rattle can be pointed at any pool whose strokes their role table knows.
+
+No physical instruments are recorded; samples come from VCSL (CC0). Playback is
+live; there is no rendering to file. There is no vibrato, though `detune` is an
+automatable `AudioParam`, so that is a choice rather than a limit.
