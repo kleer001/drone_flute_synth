@@ -42,6 +42,14 @@ PEAK = 0.89
 SILENCE = 3e-4
 FADE_IN_S = 0.001        # the transient is the sound; this only kills a click
 FADE_OUT_S = 0.012
+# A sound that runs past `max_s` is cut mid-gesture rather than having died
+# away, so it is still at full level when the file ends. The ocean drum is cut
+# at 8 s while measuring 0.89-3.7x its own body level; a 12 ms fade on that is
+# an edge, and it is heard as a click. Long enough to read as the gesture
+# ending instead. The fade-in matters for the same reason: a wash that switches
+# on in 1 ms ticks, where a struck sound's 1 ms IS the attack.
+CUT_FADE_OUT_S = 0.80
+CUT_FADE_IN_S = 0.05
 # Subsonic trim. Several of VCSL's shortest shaker recordings carry a DC
 # offset of a couple of thousandths -- harmless in a long sustain, but these
 # are 80 ms bursts, so the offset arrives as a step and is heard as a thump on
@@ -148,13 +156,17 @@ def prepare(path, max_s):
         sig = resample_poly(sig, ratio.numerator, ratio.denominator)
 
     limit = int(max_s * SAMPLE_RATE)
-    if sig.size > limit:
+    cut = sig.size > limit
+    if cut:
         sig = sig[:limit]
 
     # A trim lands mid-waveform, and a step to zero is a click. These are the
-    # shortest fades that remove it without softening the transient.
-    n_in = min(int(FADE_IN_S * SAMPLE_RATE), sig.size // 2)
-    n_out = min(int(FADE_OUT_S * SAMPLE_RATE), sig.size // 2)
+    # shortest fades that remove it without softening the transient -- unless
+    # the sound was cut rather than allowed to end, which needs a real fade.
+    fade_in = CUT_FADE_IN_S if cut else FADE_IN_S
+    fade_out = CUT_FADE_OUT_S if cut else FADE_OUT_S
+    n_in = min(int(fade_in * SAMPLE_RATE), sig.size // 2)
+    n_out = min(int(fade_out * SAMPLE_RATE), sig.size // 2)
     if n_in:
         sig[:n_in] *= np.linspace(0.0, 1.0, n_in)
     if n_out:
