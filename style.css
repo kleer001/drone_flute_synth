@@ -122,3 +122,47 @@ p.hint { margin: .4rem 0 0; color: var(--muted); font-size: 11px; }
 .commit button:disabled { opacity: .4; cursor: default; }
 .status { color: var(--muted); font-variant-numeric: tabular-nums; }
 .status.pending { color: var(--edit, #b26a00); }
+
+/* ---- mixer ---- */
+/* A strip per instrument: its level, and how much of it reaches each effect.
+   The head row names the columns once, so a strip is three numbers rather than
+   three labels repeated five times. */
+.mixer { background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; }
+.mixhead, .mixrow {
+  display: grid; grid-template-columns: 5.5rem repeat(3, 1fr 2.6rem);
+  align-items: center; gap: .5rem; padding: .18rem .5rem; min-height: 1.6rem;
+}
+.mixhead {
+  padding-top: .3rem; padding-bottom: .3rem; color: var(--muted);
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  border-bottom: 1px solid var(--rule);
+}
+.mixhead span + span { grid-column: span 2; }
+.mixrow + .mixrow { border-top: 1px solid var(--rule); }
+.mixname { color: var(--muted); }
+/* The sum of the strips above it, so it shares their columns and its slider
+   sits in the level column where a level belongs. */
+.mixer.master { margin-top: .35rem; }
+.mixrow output { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---- expert fold ---- */
+/* The controls that shape the tune itself. They are the deepest thing here and
+   the least often wanted, so they start closed. */
+.expert { margin-top: .35rem; }
+.expert > summary {
+  cursor: pointer; color: var(--muted); padding: .3rem .1rem; list-style: none;
+}
+.expert > summary::-webkit-details-marker { display: none; }
+.expert > summary::before { content: "\25B8"; margin-right: .35rem; }
+.expert[open] > summary::before { content: "\25BE"; }
+.expert > summary:hover { color: var(--ink); }
+
+/* Labels the grid does not need to show but a screen reader does. */
+.sr {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+
+:where(button, input, select, summary):focus-visible {
+  outline: 2px solid var(--ink); outline-offset: 1px;
+}

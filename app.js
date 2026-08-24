@@ -39,8 +39,10 @@ const MAKEUP = INSTRUMENT.makeupGain;
 const ampFor = (velocity, gain) => Math.pow(velocity / 127, 1.4) * gain;
 
 // the graph, built once
-let master = null, dryGain = null, wetGain = null, convolver = null,
-    preDelay = null, tone = null, limiter = null, percGain = null;
+let master = null, tone = null, limiter = null;
+let convolver = null, preDelay = null, reverbIn = null, reverbReturn = null;
+let delayNode = null, delayIn = null, delayReturn = null, feedback = null, fbTone = null;
+let bus = {};                 // channel name -> {input, sends: {reverb, delay}}
 
 const LABELS = {
   notes_per_breath: "notes / breath", step_leap_ratio: "step : leap",
@@ -59,16 +61,41 @@ const STEPS = {bpm: 1, rattle_scale: 1};
 
 /* Rooms. These live here rather than in the profile because they are not
    properties of the instrument -- the same flute can be played in any of
-   them, and none of it reaches the engine. */
+   them, and none of it reaches the engine.
+
+   A room no longer carries a wet amount. How much of each instrument is in the
+   room is a send, and the sends belong to the mixer. */
 const ROOMS = {
-  "dry":       {wet: 0.04, decay: 0.5, predelay: 0,  tone: 18000},
-  "small room":{wet: 0.18, decay: 1.1, predelay: 8,  tone: 15000},
-  "chapel":    {wet: 0.32, decay: 2.6, predelay: 22, tone: 12000},
-  "hall":      {wet: 0.42, decay: 4.2, predelay: 35, tone: 10000},
-  "cathedral": {wet: 0.52, decay: 6.5, predelay: 55, tone: 8000},
-  "canyon":    {wet: 0.62, decay: 8.0, predelay: 110, tone: 6000},
+  "dry":       {decay: 0.5, predelay: 0,   tone: 18000, verb: 0.35},
+  "small room":{decay: 1.1, predelay: 8,   tone: 15000, verb: 0.55},
+  "chapel":    {decay: 2.6, predelay: 22,  tone: 12000, verb: 0.65},
+  "hall":      {decay: 4.2, predelay: 35,  tone: 10000, verb: 0.70},
+  "cathedral": {decay: 6.5, predelay: 55,  tone: 8000,  verb: 0.75},
+  "canyon":    {decay: 8.0, predelay: 110, tone: 6000,  verb: 0.80},
 };
 const ROOM_FIELDS = Object.keys(ROOMS.dry);
+
+/* The mixer. One channel per instrument, each with a level and a send to each
+   effect. `makeup` says whether the channel carries the sample set's makeup
+   gain: the flute loops were recorded quietly and need it, the percussion was
+   normalised at build time and does not.
+
+   The defaults reproduce the balance the single wet/dry stage used to give,
+   so turning the page on sounds the same as it did before it had a mixer. */
+const SENDS = ["reverb", "delay"];
+const MIX = {
+  lead:   {label: "flute",      makeup: true,  level: 1.00, reverb: 0.35, delay: 0.18},
+  drone:  {label: "drone",      makeup: true,  level: 1.00, reverb: 0.50, delay: 0.06},
+  drum:   {label: "drum",       makeup: false, level: 0.90, reverb: 0.22, delay: 0.10},
+  rattle: {label: "rattle",     makeup: false, level: 0.90, reverb: 0.18, delay: 0.06},
+  wash:   {label: "rain stick", makeup: false, level: 0.90, reverb: 0.40, delay: 0.00},
+};
+const CHANNELS = Object.keys(MIX);
+
+// Delay defaults: a dotted-eighth-ish time that does not fight the beat, and
+// repeats that darken as they go, which is what keeps a long delay from
+// crowding the tune.
+const DELAY = {time: 375, feedback: 0.34, tone: 3200, level: 0.5};
 
 const $ = (id) => document.getElementById(id);
 
@@ -97,12 +124,19 @@ function urlFor(path) {
 
 /* ---------- the audio graph ----------
 
-   voices  -> breath env -> tone -> [ dry ------------------> ] master -> limiter
-   strikes -> percGain ----^         [ wet -> preDelay -> conv ]   -> destination
+   Five channels, one per instrument. Each runs dry to the master and taps a
+   send to each effect, which is what lets the drum sit close while the drone
+   sits far back in the same room.
 
-   Percussion joins at the tone stage, not under the breath envelope: it plays
-   through the inhale, which is the point of it. percGain compensates for the
-   pools being normalised near full scale while the loops sit near 0.12. */
+     lead ─┬────────────────────────────────────────────────┐
+     drone ┤   ┌─ reverb send ─→ preDelay → convolver ──────┤
+     drum ─┼───┤                                            ├→ master → tone
+     rattle┤   └─ delay send ──→ delay ────────────────────┤      → limiter
+     wash ─┘                      ↑        ↓                │
+                                  └ fbTone ┘ (repeats darken)
+
+   Tone sits after the master rather than before the sends, so a darker room
+   darkens the whole mix, tails included. */
 
 function buildGraph() {
   limiter = ctx.createDynamicsCompressor();
@@ -113,30 +147,66 @@ function buildGraph() {
   limiter.release.value = 0.25;
   limiter.connect(ctx.destination);
 
-  master = ctx.createGain();
-  master.gain.value = parseFloat($("master").value) * MAKEUP;
-  master.connect(limiter);
-
   tone = ctx.createBiquadFilter();
   tone.type = "lowpass";
   tone.frequency.value = parseFloat($("tone").value);
   tone.Q.value = 0.7;
+  tone.connect(limiter);
 
-  percGain = ctx.createGain();
-  percGain.gain.value = parseFloat($("perc").value);
-  percGain.connect(tone);
+  master = ctx.createGain();
+  master.gain.value = parseFloat($("master").value);
+  master.connect(tone);
 
-  dryGain = ctx.createGain();
-  wetGain = ctx.createGain();
+  // --- reverb return
+  reverbIn = ctx.createGain();
   preDelay = ctx.createDelay(0.5);
+  preDelay.delayTime.value = parseFloat($("predelay").value) / 1000;
   convolver = ctx.createConvolver();
   convolver.normalize = true;
-
-  tone.connect(dryGain).connect(master);
-  tone.connect(wetGain).connect(preDelay).connect(convolver).connect(master);
-  setWet(parseFloat($("wet").value));
-  preDelay.delayTime.value = parseFloat($("predelay").value) / 1000;
   convolver.buffer = makeImpulse(parseFloat($("decay").value));
+  reverbReturn = ctx.createGain();
+  reverbReturn.gain.value = parseFloat($("verb").value);
+  reverbIn.connect(preDelay).connect(convolver).connect(reverbReturn).connect(master);
+
+  // --- delay return. The feedback path is legal because a DelayNode sits in
+  // the loop; the filter in it is what makes each repeat darker than the last.
+  delayIn = ctx.createGain();
+  delayNode = ctx.createDelay(2.5);
+  delayNode.delayTime.value = parseFloat($("dtime").value) / 1000;
+  fbTone = ctx.createBiquadFilter();
+  fbTone.type = "lowpass";
+  fbTone.frequency.value = parseFloat($("dtone").value);
+  fbTone.Q.value = 0.5;
+  feedback = ctx.createGain();
+  feedback.gain.value = parseFloat($("dfeed").value);
+  delayReturn = ctx.createGain();
+  delayReturn.gain.value = parseFloat($("dlevel").value);
+  delayIn.connect(delayNode);
+  delayNode.connect(fbTone).connect(feedback).connect(delayNode);
+  delayNode.connect(delayReturn).connect(master);
+
+  // --- channels
+  const returns = { reverb: reverbIn, delay: delayIn };
+  for (const name of CHANNELS) {
+    const input = ctx.createGain();
+    input.gain.value = channelGain(name);
+    input.connect(master);
+    const sends = {};
+    for (const send of SENDS) {
+      const g = ctx.createGain();
+      g.gain.value = parseFloat($(`${name}-${send}`).value);
+      input.connect(g).connect(returns[send]);
+      sends[send] = g;
+    }
+    bus[name] = { input, sends };
+  }
+}
+
+/* A channel's level, with the sample set's makeup folded in where the
+   recordings need it. Reading the slider rather than storing it keeps one
+   source for the value. */
+function channelGain(name) {
+  return parseFloat($(`${name}-level`).value) * (MIX[name].makeup ? MAKEUP : 1);
 }
 
 /* A synthesised impulse response: noise under an exponential decay, with the
@@ -156,12 +226,6 @@ function makeImpulse(seconds) {
     for (let i = 0; i < head; i++) d[i] *= i / head;
   }
   return buf;
-}
-
-function setWet(v) {
-  // Equal-power, so moving the control changes the room and not the level.
-  wetGain.gain.value = Math.sin(v * Math.PI / 2);
-  dryGain.gain.value = Math.cos(v * Math.PI / 2);
 }
 
 /* ---------- loading ---------- */
@@ -228,14 +292,14 @@ function voice(spec, at, dur, velocity, dest) {
 
 /* One strike. `gain` is the pool's levelling gain, so every recording of a
    stroke arrives at the same loudness and velocity alone shapes the rest. */
-function strike(hit, at) {
+function strike(hit, at, dest) {
   const buffer = strokes[hit.file];
   if (!buffer) throw new Error(`no buffer for ${hit.file}`);
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   const g = ctx.createGain();
   g.gain.value = ampFor(hit.velocity, hit.gain);
-  src.connect(g).connect(percGain);
+  src.connect(g).connect(dest);
   src.start(at);
   live.add(src);
   src.onended = () => live.delete(src);
@@ -243,22 +307,28 @@ function strike(hit, at) {
 
 /* ---------- playing one breath ---------- */
 
-function scheduleBreath(b) {
-  const t0 = cursor;
-
-  // The drone runs the whole breath, under the shared breath envelope: both
-  // chambers rise and fall together, which is the instrument's whole argument.
+/* The breath envelope, on its own gain stage. Lead and drone each get one
+   rather than sharing: they rise and fall together, which is the instrument's
+   whole argument, but they are separate channels in the mixer and a shared
+   node could only reach one of them. */
+function breathEnv(t0, lengthS, dest) {
   const env = ctx.createGain();
   env.gain.setValueAtTime(0.0001, t0);
   env.gain.exponentialRampToValueAtTime(1, t0 + inst.attack_s);
-  env.gain.setValueAtTime(1, t0 + b.length_s - inst.release_s);
-  env.gain.exponentialRampToValueAtTime(0.0001, t0 + b.length_s);
-  env.connect(tone);
+  env.gain.setValueAtTime(1, t0 + lengthS - inst.release_s);
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + lengthS);
+  env.connect(dest);
+  return env;
+}
+
+function scheduleBreath(b) {
+  const t0 = cursor;
 
   // Up to three drones share one gain stage, scaled by 1/sqrt(n): three voices
   // at full level would be three times the drone the settings ask for, and the
   // limiter would spend the whole breath pulling it back down.
   if (b.drones.length) {
+    const env = breathEnv(t0, b.length_s, bus.drone.input);
     const drone = ctx.createGain();
     drone.gain.value = ampFor(b.drone_velocity, inst.voice_gain.drone)
                        / Math.sqrt(b.drones.length);
@@ -268,17 +338,18 @@ function scheduleBreath(b) {
     }
   }
 
+  const lead = breathEnv(t0, b.length_s, bus.lead.input);
   for (const n of b.notes) {
     const at = t0 + n.start_s;
     const dur = Math.min(n.dur_s, b.length_s - n.start_s);
     if (dur <= 0.005) continue;
-    voice(inst.voices[n.name], at, dur, n.velocity, env);
+    voice(inst.voices[n.name], at, dur, n.velocity, lead);
   }
 
-  // Not under `env`: the rattle runs on through the inhale, and the drum is
-  // answering the tune rather than riding its breath.
-  for (const layer of Object.values(b.pulses)) {
-    for (const hit of layer) strike(hit, t0 + hit.start_s);
+  // Not under a breath envelope: the rattle runs on through the inhale, and the
+  // drum is answering the tune rather than riding its breath.
+  for (const [layer, hits] of Object.entries(b.pulses)) {
+    for (const hit of hits) strike(hit, t0 + hit.start_s, bus[layer].input);
   }
 
   cursor = t0 + b.length_s + b.inhale_s;
@@ -680,24 +751,67 @@ for (const tab of document.querySelectorAll(".tab")) {
   });
 }
 
+/* ---------- mixer ---------- */
+
+/* One control in the grid. `level` folds in the makeup gain the channel needs;
+   a send is the value as it reads. */
+function mixCell(row, name, field, max) {
+  const id = `${name}-${field}`;
+  const label = document.createElement("label");
+  label.htmlFor = id;
+  label.className = "sr";
+  label.textContent = `${MIX[name].label} ${field}`;
+  const input = document.createElement("input");
+  Object.assign(input, {type: "range", id, min: 0, max, step: 0.01,
+                        value: MIX[name][field]});
+  const out = document.createElement("output");
+  const show = () => { out.textContent = Number(input.value).toFixed(2); };
+  input.addEventListener("input", () => {
+    show();
+    if (!master) return;
+    const param = field === "level" ? bus[name].input.gain : bus[name].sends[field].gain;
+    const value = field === "level" ? channelGain(name) : parseFloat(input.value);
+    param.setTargetAtTime(value, ctx.currentTime, 0.02);
+  });
+  show();
+  row.append(label, input, out);
+}
+
+/* Built from MIX rather than written out, so a channel cannot exist in the
+   graph without a strip to move it. */
+function buildMixer() {
+  const grid = $("mixer");
+  for (const name of CHANNELS) {
+    const row = document.createElement("div");
+    row.className = "mixrow";
+    const label = document.createElement("span");
+    label.className = "mixname";
+    label.textContent = MIX[name].label;
+    row.appendChild(label);
+    mixCell(row, name, "level", 1.5);
+    for (const send of SENDS) mixCell(row, name, send, 1);
+    grid.appendChild(row);
+  }
+}
+buildMixer();
+
 // Audio controls are ours and need no round trip, so they move while it sounds.
 const setRoom = {};       // id -> set the slider and apply it, without a gesture
 const bind = (id, fn, fmt, onRelease = false) => {
   const el = $(id), out = $(`${id}-out`);
   const show = () => { out.textContent = fmt(parseFloat(el.value)); };
-  const apply = () => { if (ctx) fn(parseFloat(el.value)); };
+  // `master` rather than `ctx`: the context exists while the recordings are
+  // still loading, and the nodes do not.
+  const apply = () => { if (master) fn(parseFloat(el.value)); };
   el.addEventListener("input", onRelease ? show : () => { show(); apply(); });
   if (onRelease) el.addEventListener("change", apply);
   show();
   setRoom[id] = (v) => { el.value = v; show(); apply(); };
 };
-bind("master",
-     (v) => master.gain.setTargetAtTime(v * MAKEUP, ctx.currentTime, 0.02),
+bind("master", (v) => master.gain.setTargetAtTime(v, ctx.currentTime, 0.02),
      (v) => v.toFixed(2));
-bind("perc",
-     (v) => percGain.gain.setTargetAtTime(v, ctx.currentTime, 0.02),
+bind("verb", (v) => reverbReturn.gain.setTargetAtTime(v, ctx.currentTime, 0.02),
      (v) => v.toFixed(2));
-bind("wet", (v) => setWet(v), (v) => v.toFixed(2));
 // Only on release: makeImpulse fills sampleRate * seconds random samples, so
 // at the slider's top a single drag would build ~200 MB of impulse response
 // on the thread that is also feeding the scheduler.
@@ -708,6 +822,16 @@ bind("predelay",
      (v) => `${v.toFixed(0)} ms`);
 bind("tone", (v) => tone.frequency.setTargetAtTime(v, ctx.currentTime, 0.05),
      (v) => `${(v / 1000).toFixed(1)} kHz`);
+// The delay time glides rather than jumps: a step in a delay line is a pitch
+// jump in whatever is still sounding in it.
+bind("dtime", (v) => delayNode.delayTime.setTargetAtTime(v / 1000, ctx.currentTime, 0.08),
+     (v) => `${v.toFixed(0)} ms`);
+bind("dfeed", (v) => feedback.gain.setTargetAtTime(v, ctx.currentTime, 0.02),
+     (v) => v.toFixed(2));
+bind("dtone", (v) => fbTone.frequency.setTargetAtTime(v, ctx.currentTime, 0.05),
+     (v) => `${(v / 1000).toFixed(1)} kHz`);
+bind("dlevel", (v) => delayReturn.gain.setTargetAtTime(v, ctx.currentTime, 0.02),
+     (v) => v.toFixed(2));
 
 const roomSel = $("preset");
 for (const name of Object.keys(ROOMS)) roomSel.appendChild(new Option(name, name));
