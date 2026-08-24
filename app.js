@@ -123,7 +123,7 @@ function buildGraph() {
   tone.Q.value = 0.7;
 
   percGain = ctx.createGain();
-  percGain.gain.value = percLevel();
+  percGain.gain.value = parseFloat($("perc").value);
   percGain.connect(tone);
 
   dryGain = ctx.createGain();
@@ -157,10 +157,6 @@ function makeImpulse(seconds) {
   }
   return buf;
 }
-
-/* The slider is what the mix wants; the scale is what the mood needs. */
-const percLevel = () =>
-  parseFloat($("perc").value) * (inst ? inst.percussion_scale : 1);
 
 function setWet(v) {
   // Equal-power, so moving the control changes the room and not the level.
@@ -519,8 +515,6 @@ function describe() {
   }
 
   working = structuredClone(inst.params);
-  // A submitted set can move the balance, so the bus follows it.
-  if (percGain) percGain.gain.setTargetAtTime(percLevel(), ctx.currentTime, 0.05);
   renderParams();
   $("meter").textContent =
     `${inst.meter.bpm} bpm · ${inst.meter.beats_per_measure}/4 · ` +
@@ -644,8 +638,6 @@ async function submit() {
 
 function revert() {
   working = structuredClone(inst.params);
-  // A submitted set can move the balance, so the bus follows it.
-  if (percGain) percGain.gain.setTargetAtTime(percLevel(), ctx.currentTime, 0.05);
   renderParams();
   note("");
 }
@@ -703,7 +695,7 @@ bind("master",
      (v) => master.gain.setTargetAtTime(v * MAKEUP, ctx.currentTime, 0.02),
      (v) => v.toFixed(2));
 bind("perc",
-     () => percGain.gain.setTargetAtTime(percLevel(), ctx.currentTime, 0.02),
+     (v) => percGain.gain.setTargetAtTime(v, ctx.currentTime, 0.02),
      (v) => v.toFixed(2));
 bind("wet", (v) => setWet(v), (v) => v.toFixed(2));
 // Only on release: makeImpulse fills sampleRate * seconds random samples, so
