@@ -94,6 +94,9 @@ const MIX = {
 };
 const CHANNELS = Object.keys(MIX);
 
+// The switches that are plain on/off rather than a value.
+const TOGGLES = ["song", "drum", "rattle", "wash"];
+
 /* One sixteenth, in seconds. The delay counts sixteenths rather than
    milliseconds so it stays in time when the tempo moves -- three of them is a
    dotted eighth, which lands between the beats instead of doubling them. The
@@ -576,12 +579,12 @@ function describe() {
       $(`${name}-row`).insertBefore(
         stepper((by) => nudge(working, name, by, inst.ranges[name])), $(name));
     }
-    for (const name of ["song", "drum", "rattle", "wash"]) {
+    for (const name of TOGGLES) {
       $(name).addEventListener("change", () => {
         working[name] = $(name).checked; renderParams();
       });
     }
-    for (const field of ["drum_pool", "rattle_pool"]) {
+    for (const field of Object.keys(inst.pool_choices)) {
       const sel = $(field);
       for (const name of inst.pool_choices[field]) {
         sel.appendChild(new Option(name.replace(/_/g, " "), name));
@@ -641,10 +644,8 @@ function renderParams() {
     oct > 0 ? `+${oct}` : String(oct).replace("-", "\u2212");
   ends($("octave-row"), oct, inst.ranges.lead_octave);
   if (document.activeElement !== $("seed")) $("seed").value = working.seed;
-  for (const name of ["song", "drum", "rattle", "wash"]) {
-    $(name).checked = working[name] === true;
-  }
-  for (const field of ["drum_pool", "rattle_pool"]) $(field).value = working[field];
+  for (const name of TOGGLES) $(name).checked = working[name] === true;
+  for (const field of Object.keys(inst.pool_choices)) $(field).value = working[field];
   $("drum_pool").disabled = !working.drum;
   $("rattle_pool").disabled = !working.rattle;
   $("rhythm").classList.toggle("off",

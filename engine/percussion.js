@@ -18,16 +18,12 @@ const RATTLE_STROKES = {
   cabasa: ["hit", "rub"],
   guiro: ["hit", "fast"],
 };
-const WASH_STROKE = { rain_stick: "wash", rattle_small: "roll", guiro: "slow" };
+// The wash pool is fixed, so its stroke is a constant rather than a table --
+// the shaker roll and the slow guiro would serve if it ever became a choice.
+export const WASH_STROKE = "wash";
 
 export const DRUM_POOLS = Object.keys(DRUM_STROKES);
 export const RATTLE_POOLS = Object.keys(RATTLE_STROKES);
-
-export const washStroke = (pool) => {
-  const stroke = WASH_STROKE[pool];
-  if (!stroke) throw new Error(`no wash stroke for pool ${pool}`);
-  return stroke;
-};
 
 // A wash runs far longer than a strike, so two overlapping read as one smeared
 // gesture rather than two. Breaths, not seconds: a slow mood's breath is long.

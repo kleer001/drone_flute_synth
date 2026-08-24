@@ -11,9 +11,9 @@ import { SampleSet } from "./samples.js";
 import { INSTRUMENT } from "./profile.js";
 import * as moods from "./moods.js";
 import * as scales from "./scales.js";
-import { rhythm, cycleUnits, washStroke,
-         DRUM_POOL, RATTLE_POOL, WASH_POOL, DRUM_POOLS, RATTLE_POOLS,
-         WASH_MIN_GAP, WASH_VELOCITY } from "./percussion.js";
+import { rhythm, cycleUnits, DRUM_POOL, RATTLE_POOL, WASH_POOL,
+         DRUM_POOLS, RATTLE_POOLS,
+         WASH_STROKE, WASH_MIN_GAP, WASH_VELOCITY } from "./percussion.js";
 
 // The drone sits under the lead rather than beside it.
 const VOICE_GAIN = { drone: 0.85, lead: 1.0 };
@@ -104,6 +104,13 @@ export class Instrument {
   get poolChoices() {
     const have = (names) => names.filter((n) => n in this.percussion);
     return { drum_pool: have(DRUM_POOLS), rattle_pool: have(RATTLE_POOLS) };
+  }
+
+  /* Whether a layer is switched on and its pool was actually authored.
+     One expression because it was three, and one of the three had drifted to
+     the opposite polarity. */
+  _playing(layer, pool) {
+    return this.params[layer] === true && pool in this.percussion;
   }
 
   /* Every file the layers that are switched on can reach. Takes a parameter
@@ -241,13 +248,13 @@ export class Instrument {
     const layers = rhythm({
       motif: plan.motif, notes: plan.melodyNotes, meter,
       lengthS: plan.lengthS, inhaleS: plan.inhaleS, clock: this._clock,
-      drum: p.drum === true && !!this.percussion[p.drum_pool],
-      rattle: p.rattle === true && !!this.percussion[p.rattle_pool],
+      drum: this._playing("drum", p.drum_pool),
+      rattle: this._playing("rattle", p.rattle_pool),
       drumDensity: Number(p.drum_density), rattleScale: Math.trunc(p.rattle_scale),
       drumPool: p.drum_pool, rattlePool: p.rattle_pool,
     });
     this._clock += cycleUnits(meter, plan.lengthS, plan.inhaleS);
-    layers.wash = this._wash(plan.index);
+    layers.wash = this._wash(plan.index);   // its own stream, so not in rhythm()
     return {
       index: plan.index,
       length_s: plan.lengthS,
@@ -274,12 +281,11 @@ export class Instrument {
      seconds of grains that outlast the breath they start in, so two close
      together read as one smear. */
   _wash(index) {
-    const p = this.params;
-    if (p.wash !== true || !this.percussion[WASH_POOL]) return [];
+    if (!this._playing("wash", WASH_POOL)) return [];
     if (index - this._lastWash < WASH_MIN_GAP) return [];
-    if (this._strikes.random() >= Number(p.wash_rate)) return [];
+    if (this._strikes.random() >= Number(this.params.wash_rate)) return [];
     this._lastWash = index;
-    return [{ startS: 0, stroke: washStroke(WASH_POOL), velocity: WASH_VELOCITY }];
+    return [{ startS: 0, stroke: WASH_STROKE, velocity: WASH_VELOCITY }];
   }
 
   /* One planned hit, given the recording that will sound it.
