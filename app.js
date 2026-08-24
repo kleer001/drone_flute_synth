@@ -45,6 +45,7 @@ let master = null, dryGain = null, wetGain = null, convolver = null,
 const LABELS = {
   notes_per_breath: "notes / breath", step_leap_ratio: "step : leap",
   ornament_rate: "ornament", cadence_strength: "cadence",
+  wash_rate: "rain stick rate",
   register_bias: "register bias",
   call_response: "call / answer", bpm: "tempo",
   breath_mean_s: "breath mean", breath_spread_s: "breath spread",
@@ -171,6 +172,14 @@ async function fetchRaw(path) {
   return res.arrayBuffer();
 }
 
+/* Only what is not already decoded, so switching a pool fetches that pool and
+   nothing else. */
+async function loadStrokes(paths) {
+  await Promise.all(paths.filter((p) => !(p in strokes)).map(async (path) => {
+    strokes[path] = await ctx.decodeAudioData(await fetchRaw(path));
+  }));
+}
+
 async function loadBuffers() {
   await Promise.all([
     ...engine.loopFiles().map(async (path) => {
@@ -180,9 +189,7 @@ async function loadBuffers() {
       const points = readLoopPoints(raw, path);
       loops[path] = { ...points, buffer: await ctx.decodeAudioData(raw) };
     }),
-    ...engine.strokeFiles().map(async (path) => {
-      strokes[path] = await ctx.decodeAudioData(await fetchRaw(path));
-    }),
+    loadStrokes(engine.strokeFiles()),
   ]);
 }
 
@@ -334,6 +341,7 @@ async function start() {
       songRepeats: Number(url.get("repeats")) || 2,
       drum: url.get("drum") === "1",
       rattle: url.get("rattle") === "1",
+      wash: url.get("wash") === "1",
     });
     inst = engine.describe();
     await loadBuffers();
@@ -483,16 +491,25 @@ function describe() {
       $(`${name}-row`).insertBefore(
         stepper((by) => nudge(working, name, by, inst.ranges[name])), $(name));
     }
-    for (const name of ["drum", "rattle"]) {
+    for (const name of ["drum", "rattle", "wash"]) {
       $(name).addEventListener("change", () => {
         working[name] = $(name).checked; renderParams();
+      });
+    }
+    for (const field of ["drum_pool", "rattle_pool"]) {
+      const sel = $(field);
+      for (const name of inst.pool_choices[field]) {
+        sel.appendChild(new Option(name.replace(/_/g, " "), name));
+      }
+      sel.addEventListener("change", () => {
+        working[field] = sel.value; renderParams();
       });
     }
     for (const name of inst.rhythm_fields) $("rhythm").appendChild(paramRow(name));
     for (let i = 0; i < inst.drone_slots; i++) {
       $("drones").appendChild(droneRow(i));
     }
-    for (const name of inst.mood_weights) $("weights").appendChild(paramRow(name));
+    for (const name of inst.weight_fields) $("weights").appendChild(paramRow(name));
     for (const name of inst.breath_fields) $("breath").appendChild(paramRow(name));
     built = true;
   }
@@ -537,8 +554,12 @@ function renderParams() {
   ends($("octave-row"), oct, inst.ranges.lead_octave);
   if (document.activeElement !== $("seed")) $("seed").value = working.seed;
   $("song").checked = working.song === true;
-  for (const name of ["drum", "rattle"]) $(name).checked = working[name] === true;
-  $("rhythm").classList.toggle("off", !working.drum && !working.rattle);
+  for (const name of ["drum", "rattle", "wash"]) $(name).checked = working[name] === true;
+  for (const field of ["drum_pool", "rattle_pool"]) $(field).value = working[field];
+  $("drum_pool").disabled = !working.drum;
+  $("rattle_pool").disabled = !working.rattle;
+  $("rhythm").classList.toggle("off",
+    !working.drum && !working.rattle && !working.wash);
   for (const name of ["song_blocks", "song_repeats"]) {
     $(name).textContent = String(working[name]);
     ends($(`${name}-row`), working[name], inst.ranges[name]);
@@ -590,10 +611,17 @@ function renderStatus(dirty = anyDirty()) {
    half-changed -- a key from the new set under a phrase drawn for the old one.
    It lands on the next breath the page asks for, which is why the breaths
    already scheduled play out first. */
-function submit() {
+async function submit() {
   if (!inst || !anyDirty()) return;
   const pending = structuredClone(working);
   try {
+    // Before the set is applied, not after: the scheduler may ask for a breath
+    // the moment `update` returns, and a strike with no buffer is an error.
+    const wanted = [];
+    if (pending.drum) wanted.push(pending.drum_pool);
+    if (pending.rattle) wanted.push(pending.rattle_pool);
+    if (pending.wash) wanted.push(inst.pools.wash);
+    if (ctx) await loadStrokes(engine.poolFiles(wanted));
     inst = engine.update(pending);
   } catch (err) {
     note(`refused: ${err.message}`);

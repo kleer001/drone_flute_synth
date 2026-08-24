@@ -17,6 +17,7 @@ import { noteSequence } from "./engine/breath.js";
 import { rasterize, MIN_ONSET_GAP_S } from "./engine/melody.js";
 import { LOOP_SUFFIX, parseManifest } from "./engine/samples.js";
 import { BLOCK_BREATHS } from "./engine/song.js";
+import { WASH_MIN_GAP } from "./engine/percussion.js";
 import { Rng } from "./engine/rng.js";
 import * as scales from "./engine/scales.js";
 
@@ -216,12 +217,15 @@ if (!pools.length) {
       }
     }
   }
-  // What the page is told to fetch is exactly what the layers can reach for:
-  // the pools named in `pools`, no more (5 MB of unplayed washes) and no less.
-  const reachable = probe.strokeFiles().join(" ");
-  const named = Object.values(probe.pools)
-    .flatMap((n) => manifest.percussion[n]?.files() ?? []).sort().join(" ");
-  if (reachable !== named) unreachable.push("strokeFiles() disagrees with the named pools");
+  // What the page is told to fetch is exactly what the layers that are on can
+  // reach for -- no more (5 MB of unplayed washes) and no less.
+  const off = new Instrument(manifest, { mood, seed: 3, key, mode });
+  if (off.strokeFiles().length) unreachable.push("layers off still asked for files");
+  off.update({ drum: true, drum_pool: "cabasa" });
+  const want = manifest.percussion.cabasa.files().sort().join(" ");
+  if (off.strokeFiles().join(" ") !== want) {
+    unreachable.push("strokeFiles() did not follow the selected pool");
+  }
 
   if (!unreachable.length) {
     const strokes = pools.reduce((n, [, p]) => n + p.strokes.length, 0);
@@ -477,7 +481,60 @@ if (!pools.length) {
   }
   if (!repeatedBlocks) bad.push("no block repeated inside the section");
 
+  // Every pool a selector offers has to resolve every stroke its role asks
+  // for, or choosing it is an error several layers down.
+  const choices = inst.describe().pool_choices;
+  const tried = [];
+  for (const [field, names] of Object.entries(choices)) {
+    if (field === "wash_pool") continue;
+    for (const name of names) {
+      const probe2 = new Instrument(manifest, { mood, seed: 55, key, mode });
+      probe2.update({ drum: true, rattle: true, [field]: name });
+      let hits = 0;
+      for (let i = 0; i < 12; i++) {
+        const b = probe2.nextBreath();
+        for (const l of Object.values(b.pulses)) {
+          for (const h of l) {
+            hits++;
+            if (!probe2.strokeFiles().includes(h.file) && h.file.split("/")[1].startsWith(name)) {
+              bad.push(`${field}=${name} reached an unloadable ${h.file}`);
+            }
+          }
+        }
+      }
+      if (!hits) bad.push(`${field}=${name} produced no hits`);
+      tried.push(`${field}=${name}`);
+    }
+  }
+
+  // The wash is a texture, not a pulse: at most one per breath, never closer
+  // than WASH_MIN_GAP breaths, and reproducible.
+  const washRun = (seed) => {
+    const w = new Instrument(manifest, { mood: "sleep", seed, key, mode });
+    w.update({ wash: true });
+    const at = [];
+    for (let i = 0; i < 200; i++) {
+      const b = w.nextBreath();
+      if (b.pulses.wash.length > 1) bad.push("more than one wash in a breath");
+      if (b.pulses.wash.length) at.push(b.index);
+    }
+    return at;
+  };
+  const washA = washRun(4242), washB = washRun(4242), washC = washRun(99);
+  for (let i = 1; i < washA.length; i++) {
+    if (washA[i] - washA[i - 1] < WASH_MIN_GAP) {
+      bad.push(`washes ${washA[i - 1]} and ${washA[i]} closer than ${WASH_MIN_GAP} breaths`);
+    }
+  }
+  if (!washA.length) bad.push("the wash never fired in 200 breaths");
+  if (washA.join(",") !== washB.join(",")) bad.push("the wash did not reproduce from the seed");
+  if (washA.join(",") === washC.join(",")) bad.push("a different seed washed identically");
+
   if (!bad.length) {
+    console.log(`PASS  pools/roles: ${tried.length} selectable pools all voiced ` +
+                `(${tried.join(", ")})`);
+    console.log(`PASS  wash: ${washA.length} in 200 breaths, ` +
+                `never closer than ${WASH_MIN_GAP}, reproducible`);
     console.log(`PASS  rhythm: ${drumHits} drum and ${rattleHits} rattle hits over ${spans} ` +
                 `breaths, 0 doubled the tune, ${pastInhale} rattle hits fell in an inhale`);
     console.log(`PASS  rhythm/song: ${repeatedBlocks} repeated blocks drummed the same figure, ` +

@@ -2,12 +2,15 @@ import { round } from "./rng.js";
 
 export const DRUM_POOL = "frame_drum";
 export const RATTLE_POOL = "rattle";
+export const WASH_POOL = "rain_stick";
 
 // Which stroke of a pool serves which role. Pools name their strokes
 // differently, so this is a table rather than a guess.
 const DRUM_STROKES = {
   frame_drum: { strong: "hit", weak: "muted" },
   frame_drum_small: { strong: "hit", weak: "muted" },
+  cabasa: { strong: "hit", weak: "rub" },
+  guiro: { strong: "hit", weak: "med" },
 };
 const RATTLE_STROKES = {
   rattle: ["down", "up"],
@@ -15,6 +18,22 @@ const RATTLE_STROKES = {
   cabasa: ["hit", "rub"],
   guiro: ["hit", "fast"],
 };
+const WASH_STROKE = { rain_stick: "wash", rattle_small: "roll", guiro: "slow" };
+
+export const DRUM_POOLS = Object.keys(DRUM_STROKES);
+export const RATTLE_POOLS = Object.keys(RATTLE_STROKES);
+export const WASH_POOLS = Object.keys(WASH_STROKE);
+
+export const washStroke = (pool) => {
+  const stroke = WASH_STROKE[pool];
+  if (!stroke) throw new Error(`no wash stroke for pool ${pool}`);
+  return stroke;
+};
+
+// A wash runs far longer than a strike, so two overlapping read as one smeared
+// gesture rather than two. Breaths, not seconds: a slow mood's breath is long.
+export const WASH_MIN_GAP = 4;
+export const WASH_VELOCITY = 48;
 
 const DRUM_VELOCITY = { 3: 104, 2: 80, 1: 60 };
 const RATTLE_VELOCITY = { 3: 82, 2: 70, 1: 60 };
