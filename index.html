@@ -24,26 +24,53 @@
 
   <nav class="tabs">
     <button class="tab on" data-tab="performance">performance</button>
-    <button class="tab" data-tab="room">room</button>
+    <button class="tab" data-tab="mix">mix</button>
+    <button class="tab" data-tab="effects">effects</button>
   </nav>
 
   <section data-panel="performance">
     <div class="rows" id="head">
       <div class="param"><label for="mood">mood</label>
         <select id="mood"></select><output></output></div>
-      <div class="param"><label for="key">key</label>
-        <select id="key"></select><output></output></div>
-      <div class="param"><label for="mode">scale</label>
-        <select id="mode"></select><output></output></div>
-      <div class="param" id="octave-row"><label>lead octave offset</label>
-        <output id="lead_octave"></output></div>
-      <div class="param"><label for="seed">seed</label>
-        <input type="text" id="seed" inputmode="numeric">
-        <button id="reseed" class="link" title="New seed">&#8635;</button></div>
+      <div class="param pair"><label for="key">key &amp; scale</label>
+        <select id="key"></select>
+        <label class="sr" for="mode">scale</label>
+        <select id="mode"></select></div>
     </div>
+    <div class="rows" id="song-rows">
+      <div class="param" id="song-row">
+        <label><input type="checkbox" id="song" class="on"> song form</label>
+        <output></output></div>
+      <div class="param" id="song_blocks-row"><label>blocks</label>
+        <output id="song_blocks"></output></div>
+      <div class="param" id="song_repeats-row"><label>repeats each</label>
+        <output id="song_repeats"></output></div>
+    </div>
+    <div class="rows" id="rhythm-rows">
+      <div class="param" id="drum-row">
+        <label><input type="checkbox" id="drum" class="on"> drum</label>
+        <select id="drum_pool"></select><output></output></div>
+      <div class="param" id="rattle-row">
+        <label><input type="checkbox" id="rattle" class="on"> rattle</label>
+        <select id="rattle_pool"></select><output></output></div>
+      <div class="param" id="wash-row">
+        <label><input type="checkbox" id="wash" class="on"> rain stick</label>
+        <output></output></div>
+    </div>
+    <div class="rows" id="rhythm"></div>
     <div class="rows" id="drones"></div>
-    <div class="rows" id="weights"></div>
-    <div class="rows" id="breath"></div>
+    <details class="expert">
+      <summary>expert &mdash; how the flute plays</summary>
+      <div class="rows">
+        <div class="param"><label for="seed">seed</label>
+          <input type="text" id="seed" inputmode="numeric">
+          <button id="reseed" class="link" title="New seed">&#8635;</button></div>
+        <div class="param" id="octave-row"><label>lead octave offset</label>
+          <output id="lead_octave"></output></div>
+      </div>
+      <div class="rows" id="weights"></div>
+      <div class="rows" id="breath"></div>
+    </details>
     <div class="commit">
       <button id="submit" class="go" disabled>Submit</button>
       <button id="revert" disabled>Revert</button>
@@ -53,15 +80,27 @@
       the next breath, so whatever is playing now finishes first.</p>
   </section>
 
-  <section data-panel="room" hidden>
+  <section data-panel="mix" hidden>
+    <div class="mixer" id="mixer">
+      <div class="mixhead"><span>channel</span><span>level</span><span>reverb</span><span>delay</span></div>
+    </div>
+    <div class="mixer master">
+      <div class="mixrow"><label class="mixname" for="master">master</label>
+        <input type="range" id="master" min="0" max="1" step="0.01" value="0.8">
+        <output id="master-out"></output></div>
+    </div>
+    <p class="hint">Levels and sends move the sound as you drag them. No Submit
+      needed.</p>
+  </section>
+
+  <section data-panel="effects" hidden>
+    <div class="section">reverb</div>
     <div class="rows">
       <div class="param"><label for="preset">room</label>
         <select id="preset"></select><output></output></div>
-    </div>
-    <div class="rows">
-      <div class="param"><label for="wet">reverb</label>
-        <input type="range" id="wet" min="0" max="1" step="0.01">
-        <output id="wet-out"></output></div>
+      <div class="param"><label for="verb">return</label>
+        <input type="range" id="verb" min="0" max="1" step="0.01">
+        <output id="verb-out"></output></div>
       <div class="param"><label for="decay">decay</label>
         <input type="range" id="decay" min="0.2" max="8" step="0.1">
         <output id="decay-out"></output></div>
@@ -71,11 +110,24 @@
       <div class="param"><label for="tone">tone</label>
         <input type="range" id="tone" min="800" max="18000" step="100">
         <output id="tone-out"></output></div>
-      <div class="param"><label for="master">level</label>
-        <input type="range" id="master" min="0" max="1" step="0.01" value="0.8">
-        <output id="master-out"></output></div>
     </div>
-    <p class="hint">These change the sound as you drag them. No Submit needed.</p>
+    <div class="section">delay</div>
+    <div class="rows">
+      <div class="param"><label for="dtime">time (16ths)</label>
+        <input type="range" id="dtime" min="1" max="16" step="1" value="3">
+        <output id="dtime-out"></output></div>
+      <div class="param"><label for="dfeed">feedback</label>
+        <input type="range" id="dfeed" min="0" max="0.85" step="0.01" value="0.34">
+        <output id="dfeed-out"></output></div>
+      <div class="param"><label for="dtone">repeat tone</label>
+        <input type="range" id="dtone" min="400" max="12000" step="100" value="3200">
+        <output id="dtone-out"></output></div>
+      <div class="param"><label for="dlevel">return</label>
+        <input type="range" id="dlevel" min="0" max="1" step="0.01" value="0.5">
+        <output id="dlevel-out"></output></div>
+    </div>
+    <p class="hint">How much of each instrument reaches these is set per channel
+      on the mix tab.</p>
   </section>
 
   <p id="note" class="note"></p>

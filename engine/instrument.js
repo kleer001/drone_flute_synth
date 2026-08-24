@@ -11,14 +11,35 @@ import { SampleSet } from "./samples.js";
 import { INSTRUMENT } from "./profile.js";
 import * as moods from "./moods.js";
 import * as scales from "./scales.js";
+import { rhythm, cycleUnits, DRUM_POOL, RATTLE_POOL, WASH_POOL,
+         DRUM_POOLS, RATTLE_POOLS,
+         WASH_STROKE, WASH_MIN_GAP, WASH_VELOCITY } from "./percussion.js";
 
 // The drone sits under the lead rather than beside it.
 const VOICE_GAIN = { drone: 0.85, lead: 1.0 };
 
+/* Percussion draws from its own random stream, not the melody's.
+ *
+ * Sharing one would mean that striking a drum consumed a number the phrase
+ * generator was going to use, so turning percussion on would rewrite the tune
+ * -- and a seed would no longer name one performance. The constant is
+ * arbitrary; all it has to do is be one, so that the two streams are
+ * reproducible from the same seed without ever being the same stream. */
+const STRIKE_SEED_OFFSET = 0x5f356495;
+// Likewise for the song arrangement, so toggling song mode does not change
+// what the breaths themselves are.
+const SONG_SEED_OFFSET = 0x2545f491;
+
 export class Instrument {
-  constructor(files, { mood = "contemplative", seed = 1,
-                       key = "C", mode = "minor" } = {}) {
-    this.samples = new SampleSet(files, INSTRUMENT.soundingOffset);
+  /* `manifest` is what `samples.parseManifest` returned: the loops, and the
+     percussion pools if any have been authored. */
+  constructor(manifest, { mood = "contemplative", seed = 1,
+                          key = "C", mode = "minor",
+                          song = false, songBlocks = 3, songRepeats = 2,
+                          drum = false, rattle = false, wash = false } = {}) {
+    this.loopDir = manifest.loops.dir;
+    this.percussion = manifest.percussion ?? {};
+    this.samples = new SampleSet(manifest.loops.files, INSTRUMENT.soundingOffset);
     this.leadLow = scales.midiOf(INSTRUMENT.leadLow);
     this.leadHigh = scales.midiOf(INSTRUMENT.leadHigh);
 
@@ -33,6 +54,14 @@ export class Instrument {
       seed: Math.trunc(seed),
       key, mode,
       lead_octave: 0,
+      song: song === true,
+      song_blocks: Math.trunc(songBlocks),
+      song_repeats: Math.trunc(songRepeats),
+      drum: drum === true,
+      rattle: rattle === true,
+      wash: wash === true,
+      drum_pool: DRUM_POOL,
+      rattle_pool: RATTLE_POOL,
       drones: moods.defaultDrones(),
       breath_spread_s: INSTRUMENT.breathSpreadS,
       inhale_s: INSTRUMENT.inhaleS,
@@ -56,7 +85,9 @@ export class Instrument {
     const out = {};
     for (let m = low; m <= high; m++) {
       const [file, cents] = this.samples.voiceFor(m);
-      out[scales.nameOf(m)] = { file, cents };
+      // The path rather than the bare name, so a voice and a stroke are
+      // addressed the same way and the page can key one table by both.
+      out[scales.nameOf(m)] = { file: `${this.loopDir}/${file}`, cents };
     }
     return out;
   }
@@ -64,6 +95,40 @@ export class Instrument {
   /* Which files the voices actually reference, so the page loads only those. */
   loopFiles() {
     return [...new Set(Object.values(this.voices).map((v) => v.file))];
+  }
+
+  /* Which pools each layer could be set to: known to the stroke tables, and
+     actually authored in this manifest. The wash is not among them -- it has
+     one pool and no control, so offering a choice nothing can make would be a
+     menu with no consumer. */
+  get poolChoices() {
+    const have = (names) => names.filter((n) => n in this.percussion);
+    return { drum_pool: have(DRUM_POOLS), rattle_pool: have(RATTLE_POOLS) };
+  }
+
+  /* Whether a layer is switched on and its pool was actually authored.
+     One expression because it was three, and one of the three had drifted to
+     the opposite polarity. */
+  _playing(layer, pool) {
+    return this.params[layer] === true && pool in this.percussion;
+  }
+
+  /* Every file the layers that are switched on can reach. Takes a parameter
+     set so the page can ask what a *submitted* one will need and fetch it
+     before applying it, rather than deriving the layer-to-pool rule a second
+     time for itself. */
+  strokeFiles(p = this.params) {
+    const want = [];
+    if (p.drum === true) want.push(p.drum_pool);
+    if (p.rattle === true) want.push(p.rattle_pool);
+    if (p.wash === true) want.push(WASH_POOL);
+    const out = new Set();
+    for (const name of want) {
+      const pool = this.percussion[name];
+      if (!pool) continue;
+      for (const f of pool.files()) out.add(f);
+    }
+    return [...out].sort();
   }
 
   /* [lead note names, drone note names, tonic] for the current key and mode. */
@@ -91,14 +156,28 @@ export class Instrument {
     const [lead, drones, root] = this._notes();
     const mood = moods.fromWeights(p.mood, p);
     if (restart) {
+      // A new seed means "play something else", and that has to include which
+      // recordings the percussion reaches for.
+      this._strikes = new Rng(Math.trunc(p.seed) ^ STRIKE_SEED_OFFSET);
+      this._songRng = new Rng(Math.trunc(p.seed) ^ SONG_SEED_OFFSET);
+      this._clock = 0;
+      this._lastTake = new Map();
+      this._lastWash = -Infinity;
       this.performer = new Performer(
         INSTRUMENT, mood, new Rng(Math.trunc(p.seed)),
-        lead, drones, root, p.breath_spread_s, p.inhale_s);
+        lead, drones, root, p.breath_spread_s, p.inhale_s, this._song());
     } else {
       this.performer.retune({
         mood, root, leadNotes: lead, droneNotes: drones,
-        breathSpreadS: p.breath_spread_s, inhaleS: p.inhale_s });
+        breathSpreadS: p.breath_spread_s, inhaleS: p.inhale_s,
+        song: this._song() });
     }
+  }
+
+  _song() {
+    const p = this.params;
+    return { on: p.song === true, blocks: Math.trunc(p.song_blocks),
+             repeats: Math.trunc(p.song_repeats), rng: this._songRng };
   }
 
   /* Apply a partial parameter change. Throws on a bad set, changing nothing. */
@@ -109,6 +188,14 @@ export class Instrument {
     }
     const merged = { ...this.params, ...changes };
     const errors = moods.validateParams(merged);
+    // Which pools exist is a fact about the manifest, so it is checked here
+    // rather than in `moods`, which has never seen one.
+    const choices = this.poolChoices;
+    for (const field of Object.keys(choices)) {
+      if (!choices[field].includes(merged[field])) {
+        errors[field] = `must be one of ${choices[field].join(", ") || "none authored"}`;
+      }
+    }
     const keys = Object.keys(errors).sort();
     if (keys.length) {
       throw new Error(keys.map((k) => `${k}: ${errors[k]}`).join("; "));
@@ -130,8 +217,10 @@ export class Instrument {
       sampleNote: INSTRUMENT.sampleNote,
       params: structuredClone(this.params),
       ranges: moods.NUMERIC_PARAMS,
-      mood_weights: moods.MOOD_WEIGHTS,
       breath_fields: moods.BREATH_FIELDS,
+      rhythm_fields: moods.RHYTHM_FIELDS,
+      weight_fields: moods.WEIGHT_FIELDS,
+      pool_choices: this.poolChoices,
       moods: Object.keys(moods.MOODS).sort(),
       preset_weights: moods.presetWeights(),
       keys: scales.NOTE_NAMES,
@@ -139,7 +228,8 @@ export class Instrument {
       drone_slots: moods.DRONE_SLOTS,
       drone_semitones: moods.DRONE_SEMITONES,
       meter: { bpm: meter.bpm, beats_per_measure: meter.beatsPerMeasure,
-               beat_s: meter.beatS, measure_s: meter.measureS },
+               beat_s: meter.beatS, measure_s: meter.measureS,
+               unit_s: meter.unitS },
       voices: this.voices,
       // The breath envelope belongs to the breath, not to the page, so the
       // numbers come from there rather than being restated in the audio graph.
@@ -153,6 +243,18 @@ export class Instrument {
      different breaths, which is what an endless performance means. */
   nextBreath() {
     const plan = this.performer.nextBreath();
+    const p = this.params;
+    const meter = this.performer.meter;
+    const layers = rhythm({
+      motif: plan.motif, notes: plan.melodyNotes, meter,
+      lengthS: plan.lengthS, inhaleS: plan.inhaleS, clock: this._clock,
+      drum: this._playing("drum", p.drum_pool),
+      rattle: this._playing("rattle", p.rattle_pool),
+      drumDensity: Number(p.drum_density), rattleScale: Math.trunc(p.rattle_scale),
+      drumPool: p.drum_pool, rattlePool: p.rattle_pool,
+    });
+    this._clock += cycleUnits(meter, plan.lengthS, plan.inhaleS);
+    layers.wash = this._wash(plan.index);   // its own stream, so not in rhythm()
     return {
       index: plan.index,
       length_s: plan.lengthS,
@@ -164,6 +266,45 @@ export class Instrument {
       notes: plan.melodyNotes.map((n) => ({
         name: n.name, start_s: n.startS, dur_s: n.durS,
         velocity: n.velocity, grace: n.isGrace })),
+      // The pattern is decided here; which recording sounds it is drawn from
+      // the strike stream, so a repeated block drums the same figure without
+      // playing the same takes.
+      pulses: {
+        drum: layers.drum.map((h) => this._voiceStrike(p.drum_pool, h)),
+        rattle: layers.rattle.map((h) => this._voiceStrike(p.rattle_pool, h)),
+        wash: layers.wash.map((h) => this._voiceStrike(WASH_POOL, h)),
+      },
     };
+  }
+
+  /* At most one wash, and rarely. It is a texture rather than a pulse: eight
+     seconds of grains that outlast the breath they start in, so two close
+     together read as one smear. */
+  _wash(index) {
+    if (!this._playing("wash", WASH_POOL)) return [];
+    if (index - this._lastWash < WASH_MIN_GAP) return [];
+    if (this._strikes.random() >= Number(this.params.wash_rate)) return [];
+    this._lastWash = index;
+    return [{ startS: 0, stroke: WASH_STROKE, velocity: WASH_VELOCITY }];
+  }
+
+  /* One planned hit, given the recording that will sound it.
+   *
+   * The pool decides which force layer and which variation, because that is a
+   * fact about what was recorded; this supplies the stream it draws from and
+   * remembers what it used last, because where a round robin has got to is a
+   * fact about this performance. */
+  _voiceStrike(pool, hit) {
+    const set = this.percussion[pool];
+    if (!set) {
+      const have = Object.keys(this.percussion).sort().join(", ") || "none";
+      throw new Error(`no percussion pool ${pool}; have ${have}`);
+    }
+    const key = `${pool}|${hit.stroke}`;
+    const { path, gain } = set.pick(hit.stroke, hit.velocity, this._strikes,
+                                    this._lastTake.get(key));
+    this._lastTake.set(key, path);
+    return { start_s: hit.startS, stroke: hit.stroke,
+             velocity: hit.velocity, file: path, gain };
   }
 }

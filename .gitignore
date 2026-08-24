@@ -9,10 +9,12 @@ samples/
 build/
 *.wav
 
-# …except loops/, which the published site serves. Small (3.3 MB), derived from
-# CC0 source, and without them there is no player to link to. Note `loops/`
-# itself must not be ignored, or the re-include below could not reach into it.
+# …except loops/ and strokes/, which the published site serves. Small
+# (3.3 MB of loops, 5.2 MB of one-shots), derived from CC0 source, and without
+# them there is no player to link to. Note the directories themselves must not
+# be ignored, or the re-includes below could not reach into them.
 !loops/*.wav
+!strokes/*.wav
 tmp/
 vendor/
 .playwright-mcp/

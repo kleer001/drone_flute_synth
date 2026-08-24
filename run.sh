@@ -4,7 +4,7 @@
 #
 #   ./run.sh                serve and open a browser
 #   ./run.sh --port 9000    ask for a particular port
-#   ./run.sh --rebuild      re-author the loops from the VCSL samples
+#   ./run.sh --rebuild      re-author the recordings from the VCSL samples
 #   ./run.sh --no-open      serve, but do not open a browser
 #
 # The instrument is a static site at the repo root -- the same files GitHub
@@ -28,7 +28,22 @@ SITE_LOOPS="$REPO/loops"
 VENV="$REPO/.venv"
 PY="$VENV/bin/python"
 
-VCSL_SUSTAIN="$VENDOR/VCSL/Aerophones/Edge-blown Aerophones/Baroque Soprano Recorder/Sustain"
+VCSL="$VENDOR/VCSL"
+VCSL_SUSTAIN="$VCSL/Aerophones/Edge-blown Aerophones/Baroque Soprano Recorder/Sustain"
+STROKES="$BUILD/strokes"
+SITE_STROKES="$REPO/strokes"
+
+# Only the folders the build actually reads. VCSL whole is far larger, and a
+# sparse checkout of these is about 70 MB.
+VCSL_PATHS=(
+    "Aerophones/Edge-blown Aerophones/Baroque Soprano Recorder"
+    "Membranophones/Struck Membranophones/Frame Drum"
+    "Membranophones/Other Membranophones/Ocean Drum"
+    "Idiophones/Struck Idiophones/Shaker, Large"
+    "Idiophones/Struck Idiophones/Shaker, Small"
+    "Idiophones/Struck Idiophones/Cabasa"
+    "Idiophones/Struck Idiophones/Guiro"
+)
 
 PORT=8740
 REBUILD=0
@@ -48,7 +63,8 @@ done
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
 # --- 1. Loops, only if they are missing or you asked -------------------------
-if [[ $REBUILD -eq 1 || -z "$(ls -A "$SITE_LOOPS"/*.wav 2>/dev/null)" ]]; then
+if [[ $REBUILD -eq 1 || -z "$(ls -A "$SITE_LOOPS"/*.wav 2>/dev/null)" \
+                       || -z "$(ls -A "$SITE_STROKES"/*.wav 2>/dev/null)" ]]; then
     if [[ ! -x "$PY" ]]; then
         say "Creating virtualenv"
         python3 -m venv "$VENV"
@@ -60,12 +76,12 @@ if [[ $REBUILD -eq 1 || -z "$(ls -A "$SITE_LOOPS"/*.wav 2>/dev/null)" ]]; then
     fi
 
     if [[ ! -d "$VCSL_SUSTAIN" ]]; then
-        say "Fetching VCSL recorder samples (CC0, ~30 MB)"
+        say "Fetching VCSL samples (CC0, ~70 MB)"
         mkdir -p "$VENDOR"
-        rm -rf "$VENDOR/VCSL"
+        rm -rf "$VCSL"
         git clone --quiet --filter=blob:none --sparse --depth 1 \
-            https://github.com/sgossner/VCSL.git "$VENDOR/VCSL"
-        git -C "$VENDOR/VCSL" sparse-checkout set "Aerophones"
+            https://github.com/sgossner/VCSL.git "$VCSL"
+        git -C "$VCSL" sparse-checkout set "${VCSL_PATHS[@]}"
     fi
     [[ -d "$VCSL_SUSTAIN" ]] || { echo "VCSL sustains not found at $VCSL_SUSTAIN" >&2; exit 1; }
 
@@ -75,11 +91,20 @@ if [[ $REBUILD -eq 1 || -z "$(ls -A "$SITE_LOOPS"/*.wav 2>/dev/null)" ]]; then
     # Advisory, not fatal: the lowest note misses the CV threshold knowingly.
     "$PY" "$REPO/tools/loop_qa.py" "$LOOPS"/*.wav || true
 
-    say "Publishing loops into the site"
-    mkdir -p "$SITE_LOOPS"
-    rm -f "$SITE_LOOPS"/*.wav
+    say "Authoring percussion one-shots"
+    rm -rf "$STROKES"; mkdir -p "$STROKES"
+    "$PY" "$REPO/tools/oneshot.py" "$VCSL" "$STROKES"
+    # Fatal, unlike the loop gate: a one-shot that fails this carries a click
+    # or a DC step, and every onset would sound it.
+    "$PY" "$REPO/tools/stroke_qa.py" "$STROKES"/*.wav
+
+    say "Publishing recordings into the site"
+    mkdir -p "$SITE_LOOPS" "$SITE_STROKES"
+    rm -f "$SITE_LOOPS"/*.wav "$SITE_STROKES"/*.wav
     cp "$LOOPS"/*.wav "$SITE_LOOPS/"
-    "$PY" "$REPO/tools/manifest.py" "$SITE_LOOPS"
+    cp "$STROKES"/*.wav "$SITE_STROKES/"
+    # One manifest for both directories, written at the root the site serves.
+    "$PY" "$REPO/tools/manifest.py" "$SITE"
 fi
 
 # --- 2. Serve ----------------------------------------------------------------

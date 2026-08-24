@@ -17,7 +17,7 @@ export const INSTRUMENT = {
   // Shown in the page footer, with `sampleNote` behind it as the long form.
   // Provenance is first-class here: what these recordings are, and what they
   // are only a proxy for, should be readable without opening the source.
-  provenance: "samples: VCSL baroque soprano recorder (CC0)",
+  provenance: "samples: VCSL baroque soprano recorder, frame drum and shaker (CC0)",
   sampleNote:
     "Baroque soprano recorder from VCSL (CC0). A recorder is a duct flute, so " +
     "the structure is right and the timbre is a proxy. VCSL sampled it " +

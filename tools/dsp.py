@@ -13,6 +13,8 @@ import os
 import re
 import warnings
 
+import struct
+
 import numpy as np
 from scipy.io import wavfile
 from scipy.io.wavfile import WavFileWarning
@@ -110,3 +112,45 @@ def steady_region(sig, sr, f_nominal, thresh=0.5, trim=0.12):
     s0, s1 = idx[0] * hop, min((idx[-1] + 1) * hop, len(sig))
     pad = int(trim * (s1 - s0))
     return s0 + pad, s1 - pad
+
+
+def body_level(sig, sr, ms=50.0):
+    """Loudest `ms` window, as RMS. The perceived size of a struck sound.
+
+    Peak is the wrong measure for this and measurably so: the frame drum's two
+    velocity layers differ by 19 dB of peak but 15 dB of body, because a peak is
+    one sample of transient and what the ear weighs is the few tens of
+    milliseconds around it. Levelling by peak would over-correct by 4 dB.
+
+    A window rather than whole-file RMS because these are one-shots of very
+    different lengths -- a 0.1 s shaker and an 8 s wash -- and whole-file RMS
+    would rate a long decay as quiet merely for having a tail.
+    """
+    n = max(1, int(sr * ms / 1000.0))
+    if sig.size < n:
+        return float(np.sqrt(np.mean(sig ** 2)))
+    energy = np.concatenate([[0.0], np.cumsum(sig.astype(np.float64) ** 2)])
+    return float(np.sqrt(((energy[n:] - energy[:-n]) / n).max())
+)
+
+
+def riff_chunks(path):
+    """Yield (chunk_id, body) for every chunk of a RIFF/WAVE file, or nothing
+    if it is not one.
+
+    scipy exposes `fmt ` and `data` and drops the rest, so anything a sample
+    carries about itself -- loop points, above all -- has to be read from the
+    container. Walking the chunk table properly rather than searching for the
+    four bytes matters: "smpl" can occur inside sample data, and a false hit
+    would be read as a loop.
+    """
+    with open(path, "rb") as fh:
+        data = fh.read()
+    if data[0:4] != b"RIFF" or data[8:12] != b"WAVE":
+        return
+    pos = 12
+    while pos + 8 <= len(data):
+        cid = data[pos:pos + 4]
+        size = struct.unpack("<I", data[pos + 4:pos + 8])[0]
+        yield cid, data[pos + 8:pos + 8 + size]
+        pos += 8 + size + (size % 2)
