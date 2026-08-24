@@ -17,7 +17,8 @@ import { noteSequence } from "./engine/breath.js";
 import { rasterize, MIN_ONSET_GAP_S } from "./engine/melody.js";
 import { LOOP_SUFFIX, parseManifest } from "./engine/samples.js";
 import { BLOCK_BREATHS } from "./engine/song.js";
-import { WASH_MIN_GAP } from "./engine/percussion.js";
+import { WASH_MIN_GAP, RATTLE_POOLS, RATTLE_STROKE_ROLES,
+         RATTLE_WEAKEST, RATTLE_FILL_UNDER_DB } from "./engine/percussion.js";
 import { Rng, round } from "./engine/rng.js";
 import * as scales from "./engine/scales.js";
 
@@ -264,6 +265,32 @@ if (!pools.length) {
        `every recording of a stroke within 0.5 dB after gain ` +
        `(worst spread before: ${worst.toFixed(1)} dB), nothing clips`,
        steps.length ? steps[0] : `clips: ${clipped[0]}`);
+
+  // The rattle's fill is the surface its figure is heard on, so it has to
+  // arrive under the figure in every pool it can be set to. Velocity alone
+  // does not settle that: strokes are levelled within themselves and never
+  // against each other, so what a pool's fill stroke was recorded at carries
+  // through to the mix.
+  const amp = (v, gain) => Math.pow(v / 127, 1.4) * gain;
+  const levelOf = (pool, stroke, v) =>
+    20 * Math.log10(amp(v, pool.pick(stroke, v, new Rng(1), null).gain));
+  const buried = [], margins = [];
+  for (const name of RATTLE_POOLS) {
+    const pool = manifest.percussion?.[name];
+    if (!pool) continue;
+    const { cell, fill, fillVelocity } = RATTLE_STROKE_ROLES[name];
+    const under = levelOf(pool, cell, RATTLE_WEAKEST) - levelOf(pool, fill, fillVelocity);
+    margins.push(`${name} ${under.toFixed(1)}`);
+    // Half a dB either way of the margin the velocities were chosen for: any
+    // further and the fill is either inaudible or louder than what it fills.
+    if (Math.abs(under - RATTLE_FILL_UNDER_DB) > 0.5) {
+      buried.push(`${name} fill sits ${under.toFixed(1)} dB under its cell stroke, ` +
+                  `not ${RATTLE_FILL_UNDER_DB}`);
+    }
+  }
+  gate("rattle fill", !buried.length,
+       `every pool's fill ${RATTLE_FILL_UNDER_DB} dB under its softest cell stroke ` +
+       `(${margins.join(", ")})`, buried[0]);
 
   // A round robin that can repeat is not one. Two identical onsets running is
   // the sound of a sampler rather than a player, which is the whole reason

@@ -19,7 +19,10 @@ import { round } from "./rng.js";
 import { arrange, blockLabel, BLOCK_BREATHS } from "./song.js";
 
 export const BREATH_CLAMP_S = [3.0, 14.0];
-export const INHALE_CLAMP_S = [0.3, 1.6];
+// The inhale is counted in sixteenths rather than seconds, so a gap that reads
+// as a rest at one tempo still reads as one at another -- and it is a whole
+// count, so the phrase ends on the grid the rest of the rhythm is on.
+export const INHALE_CLAMP_16 = [1, 8];
 
 // One blowing pressure, every breath. This player is an ideal one: it does not
 // lean on a phrase or run out of air, so nothing here varies how hard it blows.
@@ -59,6 +62,7 @@ export class Meter {
     this.beatS = 60 / this.bpm;
     this.measureS = this.beatS * this.beatsPerMeasure;
     this.unitS = this.beatS / UNITS_PER_BEAT;
+    this.sixteenthS = this.beatS / 4;
     this.unitsPerMeasure = this.beatsPerMeasure * UNITS_PER_BEAT;
   }
 }
@@ -89,12 +93,11 @@ export const noteSequence = (notes) =>
 /* Plans breaths. Holds no audio state; the page turns plans into sound. */
 export class Performer {
   constructor(profile, mood, rng, leadNotes, droneNotes, root,
-              breathSpreadS, inhaleS, song = null) {
+              breathSpreadS, song = null) {
     this.profile = profile;
     this.mood = mood;
     this.rng = rng;
     this.breathSpreadS = breathSpreadS;
-    this.inhaleS = inhaleS;
     // {on, blocks, repeats, rng}. A block is a call and its answer, so the
     // shuffle moves pairs and an answer never leaves its call.
     this.song = song;
@@ -129,14 +132,12 @@ export class Performer {
    * Rebuilding would hand back a Performer seeded afresh: the random stream
    * would replay from the top, the motif under development would be discarded
    * and the breath count would restart. */
-  retune({ mood, root, leadNotes, droneNotes, breathSpreadS, inhaleS,
-           song } = {}) {
+  retune({ mood, root, leadNotes, droneNotes, breathSpreadS, song } = {}) {
     // A queued section holds note names from the old settings.
     this._queue = [];
     if (song != null) this.song = song;
     if (mood != null) this.mood = mood;
     if (breathSpreadS != null) this.breathSpreadS = breathSpreadS;
-    if (inhaleS != null) this.inhaleS = inhaleS;
     if (droneNotes != null) this.droneNotes = droneNotes.slice();
     // Stability is measured from the notes against the root, so it has to be
     // rebuilt whenever either of them moves -- a stale table would rate the new
@@ -149,20 +150,22 @@ export class Performer {
     }
   }
 
-  /* Fit one breath cycle to whole bars, in beats.
+  /* Fit one breath cycle to whole bars.
    *
    * The cycle -- sounding plus inhale -- is a whole number of bars, so the next
    * phrase begins on a downbeat and the beat runs unbroken through the silence.
-   * The player breathes on the last beats of the bar, which is where a wind
-   * player breathes. */
-  _snap(meter, soundTargetS, inhaleTargetS) {
-    const measures = Math.max(1, round((soundTargetS + inhaleTargetS) / meter.measureS));
-    const cycleBeats = measures * meter.beatsPerMeasure;
-    let inhaleBeats = Math.max(1, round(inhaleTargetS / meter.beatS));
+   * The player breathes at the end of the bar, which is where a wind player
+   * breathes; how long they take over it is the inhale, in sixteenths.
+   *
+   * The inhale is a count and the cycle is bars, so the phrase length is what
+   * is left over -- which is why it need not land on a beat. */
+  _snap(meter, soundTargetS, inhale16) {
+    let inhaleS = inhale16 * meter.sixteenthS;
+    const measures = Math.max(1, round((soundTargetS + inhaleS) / meter.measureS));
+    const cycleS = measures * meter.measureS;
     // Leave the phrase at least two beats to sound in.
-    inhaleBeats = Math.min(inhaleBeats, Math.max(1, cycleBeats - 2));
-    return [(cycleBeats - inhaleBeats) * meter.beatS, inhaleBeats * meter.beatS,
-            measures];
+    inhaleS = Math.min(inhaleS, Math.max(meter.sixteenthS, cycleS - 2 * meter.beatS));
+    return [cycleS - inhaleS, inhaleS, measures];
   }
 
   /* One breath. In song mode it comes from the current section; otherwise it
@@ -204,7 +207,7 @@ export class Performer {
     const meter = this.meter;
     const [length, inhale, bars] = this._snap(meter,
       clamp(this.rng.gauss(this.mood.breath_mean_s, this.breathSpreadS), BREATH_CLAMP_S),
-      clamp(this.rng.gauss(this.inhaleS, 0.2), INHALE_CLAMP_S));
+      Math.trunc(this.mood.inhale_16ths));
 
     // Redraw rather than mutate: mutating a phrase to force a difference would
     // bias the note distribution in a way that is hard to reason about.

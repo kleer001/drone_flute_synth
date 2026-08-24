@@ -64,7 +64,6 @@ export class Instrument {
       rattle_pool: RATTLE_POOL,
       drones: moods.defaultDrones(),
       breath_spread_s: INSTRUMENT.breathSpreadS,
-      inhale_s: INSTRUMENT.inhaleS,
     });
     this._apply(true);
   }
@@ -165,12 +164,11 @@ export class Instrument {
       this._lastWash = -Infinity;
       this.performer = new Performer(
         INSTRUMENT, mood, new Rng(Math.trunc(p.seed)),
-        lead, drones, root, p.breath_spread_s, p.inhale_s, this._song());
+        lead, drones, root, p.breath_spread_s, this._song());
     } else {
       this.performer.retune({
         mood, root, leadNotes: lead, droneNotes: drones,
-        breathSpreadS: p.breath_spread_s, inhaleS: p.inhale_s,
-        song: this._song() });
+        breathSpreadS: p.breath_spread_s, song: this._song() });
     }
   }
 
@@ -212,7 +210,6 @@ export class Instrument {
   describe() {
     const meter = this.performer.meter;
     return {
-      profile: INSTRUMENT.display,
       provenance: INSTRUMENT.provenance,
       sampleNote: INSTRUMENT.sampleNote,
       params: structuredClone(this.params),
@@ -229,7 +226,7 @@ export class Instrument {
       drone_semitones: moods.DRONE_SEMITONES,
       meter: { bpm: meter.bpm, beats_per_measure: meter.beatsPerMeasure,
                beat_s: meter.beatS, measure_s: meter.measureS,
-               unit_s: meter.unitS },
+               unit_s: meter.unitS, sixteenth_s: meter.sixteenthS },
       voices: this.voices,
       // The breath envelope belongs to the breath, not to the page, so the
       // numbers come from there rather than being restated in the audio graph.
@@ -251,6 +248,7 @@ export class Instrument {
       drum: this._playing("drum", p.drum_pool),
       rattle: this._playing("rattle", p.rattle_pool),
       drumDensity: Number(p.drum_density), rattleScale: Math.trunc(p.rattle_scale),
+      rattleFill: Number(p.rattle_fill),
       drumPool: p.drum_pool, rattlePool: p.rattle_pool,
     });
     this._clock += cycleUnits(meter, plan.lengthS, plan.inhaleS);
@@ -278,8 +276,8 @@ export class Instrument {
   }
 
   /* At most one wash, and rarely. It is a texture rather than a pulse: eight
-     seconds of grains that outlast the breath they start in, so two close
-     together read as one smear. */
+     seconds of grains, longer than a short breath and most of a long one, so
+     two close together read as one smear. */
   _wash(index) {
     if (!this._playing("wash", WASH_POOL)) return [];
     if (index - this._lastWash < WASH_MIN_GAP) return [];

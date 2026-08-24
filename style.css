@@ -38,6 +38,7 @@ button, input, select, output { font: inherit; color: inherit; }
 
 main { padding: 0 .5rem; }
 h1 { font-size: 1.1rem; font-weight: 600; margin: .8rem 0 .2rem; }
+.tagline { margin: 0 0 .6rem; color: var(--muted); }
 .section { margin: 1rem 0 .3rem; font-weight: 600; }
 .hint { font-weight: 400; color: var(--muted); }
 
@@ -47,9 +48,11 @@ h1 { font-size: 1.1rem; font-weight: 600; margin: .8rem 0 .2rem; }
   align-items: center; gap: .5rem; padding: .18rem .5rem; min-height: 1.6rem;
 }
 .param + .param { border-top: 1px solid var(--rule); }
-/* Two menus that are read together: one label, and the width split evenly
-   rather than one of them squeezed into the value column. */
-.param.pair { grid-template-columns: 8.6rem 1fr 1fr; }
+/* The line that says what is being played: two menus read together, then the
+   octave the lead sits in. The menus split the free width evenly, and the
+   octave keeps the value column every other row uses. */
+.param.keys { grid-template-columns: 8.6rem 1fr 1fr 2.8rem auto 2.6rem; }
+.param .sub { text-align: right; }
 .param label { color: var(--muted); }
 .param output { text-align: right; font-variant-numeric: tabular-nums; }
 select, input[type=text] {

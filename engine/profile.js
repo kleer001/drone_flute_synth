@@ -12,18 +12,21 @@
  * only place the distinction appears.
  */
 export const INSTRUMENT = {
-  display: "Baroque soprano recorder",
-
   // Shown in the page footer, with `sampleNote` behind it as the long form.
   // Provenance is first-class here: what these recordings are, and what they
   // are only a proxy for, should be readable without opening the source.
-  provenance: "samples: VCSL baroque soprano recorder, frame drum and shaker (CC0)",
+  provenance: "samples: VCSL baroque soprano recorder, frame drum, shakers, " +
+              "cabasa, guiro and ocean drum (CC0)",
   sampleNote:
     "Baroque soprano recorder from VCSL (CC0). A recorder is a duct flute, so " +
     "the structure is right and the timbre is a proxy. VCSL sampled it " +
     "whole-tone -- C D E F# G# A#, plus a stray G -- so a scale needing " +
     "semitone steps borrows the nearest recording and is shifted by at most " +
-    "100 cents, formants and all.",
+    "100 cents, formants and all. The percussion is VCSL as well: frame drum " +
+    "large and small, two shakers, cabasa, guiro, and an ocean drum standing " +
+    "in for a rain stick -- VCSL has none, and a shallow drum full of beads " +
+    "is the same gesture. The controls name the role, the credit names the " +
+    "recording.",
 
   soundingOffset: 12,
 
@@ -53,5 +56,4 @@ export const INSTRUMENT = {
 
   breathMeanS: 7.0,
   breathSpreadS: 2.5,
-  inhaleS: 0.7,
 };

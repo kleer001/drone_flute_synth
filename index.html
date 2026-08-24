@@ -21,6 +21,7 @@
 
 <main>
   <h1 id="title">drone flute</h1>
+  <p class="tagline">Your five-piece chill-out band, in a tab.</p>
 
   <nav class="tabs">
     <button class="tab on" data-tab="performance">performance</button>
@@ -32,10 +33,12 @@
     <div class="rows" id="head">
       <div class="param"><label for="mood">mood</label>
         <select id="mood"></select><output></output></div>
-      <div class="param pair"><label for="key">key &amp; scale</label>
+      <div class="param keys" id="keys-row"><label for="key">key &amp; scale</label>
         <select id="key"></select>
         <label class="sr" for="mode">scale</label>
-        <select id="mode"></select></div>
+        <select id="mode"></select>
+        <label class="sub">octave</label>
+        <output id="lead_octave"></output></div>
     </div>
     <div class="rows" id="song-rows">
       <div class="param" id="song-row">
@@ -65,8 +68,6 @@
         <div class="param"><label for="seed">seed</label>
           <input type="text" id="seed" inputmode="numeric">
           <button id="reseed" class="link" title="New seed">&#8635;</button></div>
-        <div class="param" id="octave-row"><label>lead octave offset</label>
-          <output id="lead_octave"></output></div>
       </div>
       <div class="rows" id="weights"></div>
       <div class="rows" id="breath"></div>
@@ -114,7 +115,7 @@
     <div class="section">delay</div>
     <div class="rows">
       <div class="param"><label for="dtime">time (16ths)</label>
-        <input type="range" id="dtime" min="1" max="16" step="1" value="3">
+        <input type="range" id="dtime" min="1" max="16" step="1" value="6">
         <output id="dtime-out"></output></div>
       <div class="param"><label for="dfeed">feedback</label>
         <input type="range" id="dfeed" min="0" max="0.85" step="0.01" value="0.34">

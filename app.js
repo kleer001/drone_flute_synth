@@ -53,13 +53,17 @@ const LABELS = {
   register_bias: "register bias",
   call_response: "call / answer", bpm: "tempo",
   breath_mean_s: "breath mean", breath_spread_s: "breath spread",
-  inhale_s: "inhale gap",
-  drum_density: "drum fill", rattle_scale: "rattle cycle",
+  inhale_16ths: "inhale (16ths)",
+  drum_density: "drum fill",
+  // Not "cycle": the number stretches the motif's own rhythm, so bigger is a
+  // longer figure and fewer strokes in a bar.
+  rattle_scale: "rattle stretch", rattle_fill: "rattle fill",
 };
 const DECIMALS = {notes_per_breath: 1, breath_mean_s: 1, breath_spread_s: 1,
-                  inhale_s: 2, bpm: 0, rattle_scale: 0};
-// Tempo counts whole beats, and the rattle cycle whole augmentations.
-const STEPS = {bpm: 1, rattle_scale: 1};
+                  inhale_16ths: 0, bpm: 0, rattle_scale: 0};
+// Tempo counts whole beats, the inhale whole sixteenths, and the rattle
+// stretch whole augmentations.
+const STEPS = {bpm: 1, inhale_16ths: 1, rattle_scale: 1};
 
 /* Rooms. These live here rather than in the profile because they are not
    properties of the instrument -- the same flute can be played in any of
@@ -90,7 +94,7 @@ const MIX = {
   drone:  {label: "drone",      makeup: true,  level: 1.00, reverb: 0.50, delay: 0.06},
   drum:   {label: "drum",       makeup: false, level: 0.90, reverb: 0.22, delay: 0.10},
   rattle: {label: "rattle",     makeup: false, level: 0.90, reverb: 0.18, delay: 0.06},
-  wash:   {label: "rain stick", makeup: false, level: 0.90, reverb: 0.40, delay: 0.00},
+  wash:   {label: "rain stick", makeup: false, level: 0.50, reverb: 0.70, delay: 0.55},
 };
 const CHANNELS = Object.keys(MIX);
 
@@ -98,12 +102,12 @@ const CHANNELS = Object.keys(MIX);
 const TOGGLES = ["song", "drum", "rattle", "wash"];
 
 /* One sixteenth, in seconds. The delay counts sixteenths rather than
-   milliseconds so it stays in time when the tempo moves -- three of them is a
-   dotted eighth, which lands between the beats instead of doubling them. The
+   milliseconds so it stays in time when the tempo moves -- six of them is a
+   dotted quarter, which lands between the beats instead of doubling them. The
    tempo belongs to the mood, so this follows a submitted set rather than being
    fixed when the graph is built. Every effect's own default sits on its
    control in the markup, which is the one place they are written. */
-const sixteenthS = () => (inst ? inst.meter.beat_s : 60 / 72) / 4;
+const sixteenthS = () => (inst ? inst.meter.sixteenth_s : 60 / 72 / 4);
 const delaySeconds = () => parseFloat($("dtime").value) * sixteenthS();
 
 const $ = (id) => document.getElementById(id);
@@ -562,8 +566,8 @@ function nudge(holder, field, by, [lo, hi]) {
 
 let built = false;
 function describe() {
-  document.title = inst.profile;
-  $("title").textContent = inst.profile;
+  // The heading names the instrument, which is five voices; what the lead is
+  // voiced from is a fact about the recordings, so it is credited with them.
   $("prov").textContent = inst.provenance;
   $("prov").title = inst.sampleNote;      // the long form, on hover
 
@@ -572,7 +576,7 @@ function describe() {
     for (const name of inst.moods) m.appendChild(new Option(name, name));
     for (const k of inst.keys) $("key").appendChild(new Option(k, k));
     for (const k of inst.modes) $("mode").appendChild(new Option(k, k));
-    $("octave-row").insertBefore(
+    $("keys-row").insertBefore(
       stepper((by) => nudge(working, "lead_octave", by, inst.ranges.lead_octave)),
       $("lead_octave"));
     for (const name of ["song_blocks", "song_repeats"]) {
@@ -642,7 +646,7 @@ function renderParams() {
   const oct = working.lead_octave;
   $("lead_octave").textContent =
     oct > 0 ? `+${oct}` : String(oct).replace("-", "\u2212");
-  ends($("octave-row"), oct, inst.ranges.lead_octave);
+  ends($("keys-row"), oct, inst.ranges.lead_octave);
   if (document.activeElement !== $("seed")) $("seed").value = working.seed;
   for (const name of TOGGLES) $(name).checked = working[name] === true;
   for (const field of Object.keys(inst.pool_choices)) $(field).value = working[field];
@@ -672,9 +676,16 @@ function renderParams() {
       Number(working[name]).toFixed(DECIMALS[name] ?? 2);
     row.classList.toggle("edited", isDirty(name));
   }
+  // Several of these share a row -- key, scale and octave are one line, and a
+  // layer sits beside its pool -- so the row is marked from whether *any* of
+  // its parameters is dirty. Toggling per parameter would let the last one
+  // read clear the mark the first one set.
+  const editedRows = new Map();
   for (const name of CHOICE_PARAMS) {
-    $(name).closest(".param").classList.toggle("edited", isDirty(name));
+    const row = $(name).closest(".param");
+    editedRows.set(row, (editedRows.get(row) ?? false) || isDirty(name));
   }
+  for (const [row, edited] of editedRows) row.classList.toggle("edited", edited);
   const dirty = anyDirty();
   $("submit").disabled = !dirty;
   $("revert").disabled = !dirty;
