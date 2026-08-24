@@ -18,7 +18,7 @@ import { rasterize, MIN_ONSET_GAP_S } from "./engine/melody.js";
 import { LOOP_SUFFIX, parseManifest } from "./engine/samples.js";
 import { BLOCK_BREATHS } from "./engine/song.js";
 import { WASH_MIN_GAP } from "./engine/percussion.js";
-import { Rng } from "./engine/rng.js";
+import { Rng, round } from "./engine/rng.js";
 import * as scales from "./engine/scales.js";
 
 const BREATHS = 60;
@@ -54,10 +54,9 @@ function perform(manifest, opts) {
 // directories instead would make this gate blind to the one failure the
 // manifest exists to prevent -- a recording on disk the page never learns
 // about, or one listed that is not there.
-let manifest, rawManifest;
+let manifest;
 try {
-  rawManifest = JSON.parse(readFileSync(MANIFEST, "utf8"));
-  manifest = parseManifest(rawManifest);
+  manifest = parseManifest(JSON.parse(readFileSync(MANIFEST, "utf8")));
 } catch (e) {
   console.error(`cannot read ${MANIFEST} (${e.message}). ` +
                 `Run tools/manifest.py, or ./run.sh --rebuild.`);
@@ -90,47 +89,39 @@ const b = perform(manifest, { mood, seed: 1234, key, mode });
 const c = perform(manifest, { mood, seed: 5678, key, mode });
 
 const failures = [];
+/* Every gate says the same two things in the same two ways, and said them
+   twice each -- once into `failures`, once to the console. */
+const gate = (name, ok, pass, why) => {
+  if (ok) { console.log(`PASS  ${name}: ${pass}`); return; }
+  failures.push(`${name}: ${why}`);
+  console.log(`FAIL  ${name}: ${why}`);
+};
 const same = (x, y) => x.lines.join("\n") === y.lines.join("\n");
 
 // The manifest is generated; a stale one is a note the page silently loses.
 const missing = onDisk.filter((f) => !listed.includes(f));
 const phantom = listed.filter((f) => !onDisk.includes(f));
-if (!missing.length && !phantom.length) {
-  console.log(`PASS  manifest: lists all ${onDisk.length} recordings on disk`);
-} else {
-  const why = [missing.length ? `${missing.join(", ")} on disk but unlisted` : "",
-               phantom.length ? `${phantom.join(", ")} listed but absent` : ""]
-    .filter(Boolean).join("; ");
-  failures.push(`manifest: ${why}`);
-  console.log(`FAIL  manifest: ${why}`);
-}
+gate("manifest", !missing.length && !phantom.length,
+     `lists all ${onDisk.length} recordings on disk`,
+     [missing.length ? `${missing.join(", ")} on disk but unlisted` : "",
+      phantom.length ? `${phantom.join(", ")} listed but absent` : ""]
+       .filter(Boolean).join("; "));
 
-if (same(a, b)) {
-  const chars = a.lines.reduce((n, l) => n + l.length, 0);
-  console.log(`PASS  criterion 5: same seed -> identical performance (${chars} chars compared)`);
-} else {
-  const i = a.lines.findIndex((l, k) => l !== b.lines[k]);
-  failures.push(`criterion 5: seed 1234 diverged at breath ${i}`);
-  console.log(`FAIL  criterion 5: diverged at breath ${i}`);
-}
+gate("criterion 5", same(a, b),
+     `same seed -> identical performance ` +
+     `(${a.lines.reduce((n, l) => n + l.length, 0)} chars compared)`,
+     `seed 1234 diverged at breath ${a.lines.findIndex((l, k) => l !== b.lines[k])}`);
 
-if (!same(a, c)) {
-  console.log("PASS  criterion 5b: a different seed performs differently");
-} else {
-  failures.push("criterion 5b: seeds 1234 and 5678 performed alike");
-  console.log("FAIL  criterion 5b");
-}
+gate("criterion 5b", !same(a, c), "a different seed performs differently",
+     "seeds 1234 and 5678 performed alike");
 
 let repeats = 0;
 for (let i = 1; i < a.sequences.length; i++) {
   if (a.sequences[i] === a.sequences[i - 1]) repeats++;
 }
-if (repeats === 0) {
-  console.log(`PASS  criterion 6: no two consecutive breaths identical (${a.sequences.length} breaths)`);
-} else {
-  failures.push(`criterion 6: ${repeats} consecutive repeats`);
-  console.log(`FAIL  criterion 6: ${repeats} consecutive repeats`);
-}
+gate("criterion 6", repeats === 0,
+     `no two consecutive breaths identical (${a.sequences.length} breaths)`,
+     `${repeats} consecutive repeats`);
 
 // Every key, scale and octave has to yield a playable list, and every note in
 // it has to have a voice. A note the voice table does not cover is not an
@@ -154,13 +145,10 @@ for (const k of scales.NOTE_NAMES) {
     }
   }
 }
-if (!bad.length) {
-  console.log(`PASS  coverage: ${combos} key/scale/octave combinations all voiced, ` +
-              `worst shift ${worstTune.toFixed(0)} cents at the recorded octave`);
-} else {
-  failures.push(`coverage: ${bad.length} broken: ${bad.slice(0, 3).join("; ")}`);
-  console.log(`FAIL  coverage: ${bad.slice(0, 3).join("; ")}`);
-}
+gate("coverage", !bad.length,
+     `${combos} key/scale/octave combinations all voiced, ` +
+     `worst shift ${worstTune.toFixed(0)} cents at the recorded octave`,
+     `${bad.length} broken: ${bad.slice(0, 3).join("; ")}`);
 
 // The rasterizer may thin decoration but must never touch the tune, and must
 // leave nothing stacked on the same instant.
@@ -177,26 +165,19 @@ for (let i = 0; i < 200; i++) {
 const N = (start, grace) => ({ startS: start, isGrace: grace, name: "x" });
 const pile = [N(0, false), N(0, true), N(0.01, true), N(0.02, false), N(0.5, true)];
 const survived = rasterize(pile).filter((n) => !n.isGrace).length;
-if (!tooClose && survived === 2) {
-  console.log(`PASS  rasterize: ${breaths} breaths, no onsets closer than ` +
-              `${(MIN_ONSET_GAP_S * 1000).toFixed(0)}ms, structural notes never dropped`);
-} else {
-  const why = tooClose ? `${tooClose} onsets too close` : `dropped a structural note`;
-  failures.push(`rasterize: ${why}`);
-  console.log(`FAIL  rasterize: ${why}`);
-}
+gate("rasterize", !tooClose && survived === 2,
+     `${breaths} breaths, no onsets closer than ` +
+     `${(MIN_ONSET_GAP_S * 1000).toFixed(0)}ms, structural notes never dropped`,
+     tooClose ? `${tooClose} onsets too close` : "dropped a structural note");
 
 // A rejected parameter set must change nothing.
 const guard = new Instrument(manifest, { mood, seed: 3, key: "C", mode: "minor" });
 const before = JSON.stringify(guard.params);
 let refused = false;
 try { guard.update({ bpm: 999 }); } catch { refused = true; }
-if (refused && JSON.stringify(guard.params) === before) {
-  console.log("PASS  validation: an out-of-range value is refused and nothing is applied");
-} else {
-  failures.push("validation: a bad set was accepted or partially applied");
-  console.log("FAIL  validation");
-}
+gate("validation", refused && JSON.stringify(guard.params) === before,
+     "an out-of-range value is refused and nothing is applied",
+     "a bad set was accepted or partially applied");
 
 // ---- percussion --------------------------------------------------------
 //
@@ -221,20 +202,21 @@ if (!pools.length) {
   // reach for -- no more (5 MB of unplayed washes) and no less.
   const off = new Instrument(manifest, { mood, seed: 3, key, mode });
   if (off.strokeFiles().length) unreachable.push("layers off still asked for files");
-  off.update({ drum: true, drum_pool: "cabasa" });
   const want = manifest.percussion.cabasa.files().sort().join(" ");
+  const pending = { drum: true, drum_pool: "cabasa", rattle: false, wash: false };
+  if (off.strokeFiles(pending).join(" ") !== want) {
+    unreachable.push("strokeFiles() did not answer for a pending set");
+  }
+  off.update(pending);
   if (off.strokeFiles().join(" ") !== want) {
     unreachable.push("strokeFiles() did not follow the selected pool");
   }
 
-  if (!unreachable.length) {
-    const strokes = pools.reduce((n, [, p]) => n + p.strokes.length, 0);
-    console.log(`PASS  pools: ${strokes} strokes across ${pools.length} pools, ` +
-                `every velocity 0-127 voiced, all ${probe.strokeFiles().length} files reachable`);
-  } else {
-    failures.push(`pools: ${unreachable.length} unreachable: ${unreachable[0]}`);
-    console.log(`FAIL  pools: ${unreachable[0]}`);
-  }
+  gate("pools", !unreachable.length,
+       `${pools.reduce((n, [, p]) => n + p.strokes.length, 0)} strokes across ` +
+       `${pools.length} pools, every velocity 0-127 voiced, ` +
+       `all ${strokeCount} files reachable`,
+       `${unreachable.length} unreachable: ${unreachable[0]}`);
 
   // The softest velocity reaches the softest layer and the loudest the
   // loudest, or a recorded layer is one nothing can ever ask for.
@@ -249,12 +231,9 @@ if (!pools.length) {
       }
     }
   }
-  if (!unusedLayers.length) {
-    console.log("PASS  layers: velocity 0 and 127 reach the softest and loudest recorded layer");
-  } else {
-    failures.push(`layers: ${unusedLayers[0]}`);
-    console.log(`FAIL  layers: ${unusedLayers[0]}`);
-  }
+  gate("layers", !unusedLayers.length,
+       "velocity 0 and 127 reach the softest and loudest recorded layer",
+       unusedLayers[0]);
 
   // Levelling a stroke's layers is what keeps the middle of the velocity
   // range from being a step. VCSL recorded the frame drum 15 dB apart, and
@@ -263,32 +242,28 @@ if (!pools.length) {
   let worst = 0;
   for (const [name, pool] of pools) {
     const byStroke = new Map();
-    for (const smp of rawManifest.percussion[name].samples) {
-      const path = `${rawManifest.percussion[name].dir}/${smp.file}`;
+    for (const path of pool.files()) {
+      const { stroke, loudnessDb, peak } = pool.measured(path);
+      const gain = pool.gainFor(path);
       // Levelling multiplies the whole recording, transient included.
-      const after = smp.peak * pool.gainFor(path);
-      if (after > 1.0) clipped.push(`${smp.file} -> ${after.toFixed(2)}`);
-      if (!byStroke.has(smp.stroke)) byStroke.set(smp.stroke, []);
-      byStroke.get(smp.stroke).push(
-        { raw: smp.loudness_db, levelled: smp.loudness_db + 20 * Math.log10(pool.gainFor(path)) });
+      const after = peak * gain;
+      if (after > 1.0) clipped.push(`${path} -> ${after.toFixed(2)}`);
+      if (!byStroke.has(stroke)) byStroke.set(stroke, []);
+      byStroke.get(stroke).push(
+        { raw: loudnessDb, levelled: loudnessDb + 20 * Math.log10(gain) });
     }
     for (const [stroke, taken] of byStroke) {
       const span = (key) => Math.max(...taken.map((t) => t[key])) -
                             Math.min(...taken.map((t) => t[key]));
       worst = Math.max(worst, span("raw"));
-      if (span("levelled") > 0.5) {
-        steps.push(`${name}/${stroke} still ${span("levelled").toFixed(1)} dB apart`);
-      }
+      const levelled = span("levelled");
+      if (levelled > 0.5) steps.push(`${name}/${stroke} still ${levelled.toFixed(1)} dB apart`);
     }
   }
-  if (!steps.length && !clipped.length) {
-    console.log(`PASS  levelling: every recording of a stroke within 0.5 dB after gain ` +
-                `(worst spread before: ${worst.toFixed(1)} dB), nothing clips`);
-  } else {
-    const why = steps.length ? steps[0] : `clips: ${clipped[0]}`;
-    failures.push(`levelling: ${why}`);
-    console.log(`FAIL  levelling: ${why}`);
-  }
+  gate("levelling", !steps.length && !clipped.length,
+       `every recording of a stroke within 0.5 dB after gain ` +
+       `(worst spread before: ${worst.toFixed(1)} dB), nothing clips`,
+       steps.length ? steps[0] : `clips: ${clipped[0]}`);
 
   // A round robin that can repeat is not one. Two identical onsets running is
   // the sound of a sampler rather than a player, which is the whole reason
@@ -296,11 +271,11 @@ if (!pools.length) {
   const repeated = [];
   for (const [name, pool] of pools) {
     for (const stroke of pool.strokes) {
-      for (const level of pool.levels(stroke)) {
+      const layers = pool.levels(stroke);
+      for (const level of layers) {
         if (pool.variants(stroke, level) < 2) continue;
         const rng = new Rng(4242);
         // Velocity that lands on this layer, so the draw exercises it.
-        const layers = pool.levels(stroke);
         const v = Math.round((layers.indexOf(level) / Math.max(1, layers.length - 1)) * 127);
         let last = null;
         for (let i = 0; i < 200; i++) {
@@ -311,12 +286,9 @@ if (!pools.length) {
       }
     }
   }
-  if (!repeated.length) {
-    console.log("PASS  round robin: 200 strikes, no recording used twice running");
-  } else {
-    failures.push(`round robin: ${repeated[0]} repeated`);
-    console.log(`FAIL  round robin: ${repeated[0]} repeated`);
-  }
+  gate("round robin", !repeated.length,
+       "200 strikes, no recording used twice running",
+       `${repeated[0]} repeated`);
 
   // The one that decides whether percussion can be added at all: it draws from
   // its own stream, so striking must not consume a number the phrase generator
@@ -336,15 +308,11 @@ if (!pools.length) {
   const quiet = run(false), loud = run(true), again = run(true);
   const undisturbed = quiet.notes === loud.notes;
   const reproducible = loud.hits.join(" ") === again.hits.join(" ");
-  if (undisturbed && reproducible && loud.hits.length > 0) {
-    console.log(`PASS  streams: ${loud.hits.length} strikes over 40 breaths changed no ` +
-                `note, and reproduced from the seed`);
-  } else {
-    const why = !undisturbed ? "striking altered the melody"
-                             : "strikes did not reproduce from the seed";
-    failures.push(`streams: ${why}`);
-    console.log(`FAIL  streams: ${why}`);
-  }
+  gate("streams", undisturbed && reproducible && loud.hits.length > 0,
+       `${loud.hits.length} strikes over 40 breaths changed no note, ` +
+       `and reproduced from the seed`,
+       !undisturbed ? "striking altered the melody"
+                    : "strikes did not reproduce from the seed");
 }
 
 // ---- song mode ---------------------------------------------------------
@@ -412,18 +380,14 @@ if (!pools.length) {
   if (key6(song) !== key6(again)) bad.push("same seed produced a different song");
   if (key6(song) === key6(other)) bad.push("a different seed produced the same song");
 
-  if (!bad.length) {
-    const forms = [];
-    for (let s0 = 0; s0 < SECTIONS; s0++) {
-      forms.push(song.slice(s0 * section, (s0 + 1) * section)
-                     .filter((_, i) => i % BLOCK_BREATHS === 0).map((b) => b.label).join(""));
-    }
-    console.log(`PASS  song: ${SECTIONS} sections of ${section} breaths ` +
-                `(${forms.join(" ")}), pairs intact, repeats verbatim, no block twice running`);
-  } else {
-    failures.push(`song: ${bad[0]}`);
-    console.log(`FAIL  song: ${bad[0]}`);
+  const forms = [];
+  for (let s0 = 0; s0 < SECTIONS; s0++) {
+    forms.push(song.slice(s0 * section, (s0 + 1) * section)
+                   .filter((_, i) => i % BLOCK_BREATHS === 0).map((b) => b.label).join(""));
   }
+  gate("song", !bad.length,
+       `${SECTIONS} sections of ${section} breaths (${forms.join(" ")}), ` +
+       `pairs intact, repeats verbatim, no block twice running`, bad[0]);
 }
 
 // ---- rhythm layers -----------------------------------------------------
@@ -431,18 +395,19 @@ if (!pools.length) {
   const inst = new Instrument(manifest, { mood, seed: 808, key, mode });
   inst.update({ drum: true, rattle: true });
   const d = inst.describe();
-  const unitS = d.meter.beat_s / 2;
+  const unitS = d.meter.unit_s;
   const owned = new Set(inst.strokeFiles());
   const bad = [];
-  let doubled = 0, drumHits = 0, rattleHits = 0, pastInhale = 0, spans = 0;
+  let doubled = 0, drumHits = 0, rattleHits = 0, pastInhale = 0;
+  const BREATHS_HERE = 60;
 
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < BREATHS_HERE; i++) {
     const b = inst.nextBreath();
     const onsets = new Set(b.notes.filter((n) => !n.grace)
-      .map((n) => Math.round(n.start_s / unitS)));
+      .map((n) => round(n.start_s / unitS)));
     for (const h of b.pulses.drum) {
       drumHits++;
-      if (onsets.has(Math.round(h.start_s / unitS))) doubled++;
+      if (onsets.has(round(h.start_s / unitS))) doubled++;
       if (!owned.has(h.file)) bad.push(`drum reached ${h.file}, not in strokeFiles()`);
       if (h.start_s > b.length_s + 1e-9) bad.push(`drum hit past the breath`);
     }
@@ -454,7 +419,6 @@ if (!pools.length) {
       if (h.start_s >= b.length_s - 1e-9) pastInhale++;
       if (h.start_s > b.length_s + b.inhale_s + 1e-9) bad.push(`rattle hit past the cycle`);
     }
-    spans++;
   }
   if (doubled) bad.push(`${doubled} drum hits doubled a tune onset`);
   if (!pastInhale) bad.push("the rattle never played through an inhale");
@@ -486,19 +450,17 @@ if (!pools.length) {
   const choices = inst.describe().pool_choices;
   const tried = [];
   for (const [field, names] of Object.entries(choices)) {
-    if (field === "wash_pool") continue;
     for (const name of names) {
       const probe2 = new Instrument(manifest, { mood, seed: 55, key, mode });
       probe2.update({ drum: true, rattle: true, [field]: name });
+      const loadable = new Set(probe2.strokeFiles());
       let hits = 0;
       for (let i = 0; i < 12; i++) {
         const b = probe2.nextBreath();
         for (const l of Object.values(b.pulses)) {
           for (const h of l) {
             hits++;
-            if (!probe2.strokeFiles().includes(h.file) && h.file.split("/")[1].startsWith(name)) {
-              bad.push(`${field}=${name} reached an unloadable ${h.file}`);
-            }
+            if (!loadable.has(h.file)) bad.push(`${field}=${name} reached an unloadable ${h.file}`);
           }
         }
       }
@@ -530,18 +492,15 @@ if (!pools.length) {
   if (washA.join(",") !== washB.join(",")) bad.push("the wash did not reproduce from the seed");
   if (washA.join(",") === washC.join(",")) bad.push("a different seed washed identically");
 
+  gate("pools/roles", !bad.length,
+       `${tried.length} selectable pools all voiced (${tried.join(", ")})`, bad[0]);
   if (!bad.length) {
-    console.log(`PASS  pools/roles: ${tried.length} selectable pools all voiced ` +
-                `(${tried.join(", ")})`);
     console.log(`PASS  wash: ${washA.length} in 200 breaths, ` +
                 `never closer than ${WASH_MIN_GAP}, reproducible`);
-    console.log(`PASS  rhythm: ${drumHits} drum and ${rattleHits} rattle hits over ${spans} ` +
+    console.log(`PASS  rhythm: ${drumHits} drum and ${rattleHits} rattle hits over ${BREATHS_HERE} ` +
                 `breaths, 0 doubled the tune, ${pastInhale} rattle hits fell in an inhale`);
     console.log(`PASS  rhythm/song: ${repeatedBlocks} repeated blocks drummed the same figure, ` +
                 `${repeatedBlocks - sameTakes} of them on different takes`);
-  } else {
-    failures.push(`rhythm: ${bad[0]}`);
-    console.log(`FAIL  rhythm: ${bad[0]}`);
   }
 }
 

@@ -22,7 +22,6 @@ const WASH_STROKE = { rain_stick: "wash", rattle_small: "roll", guiro: "slow" };
 
 export const DRUM_POOLS = Object.keys(DRUM_STROKES);
 export const RATTLE_POOLS = Object.keys(RATTLE_STROKES);
-export const WASH_POOLS = Object.keys(WASH_STROKE);
 
 export const washStroke = (pool) => {
   const stroke = WASH_STROKE[pool];
@@ -39,8 +38,10 @@ const DRUM_VELOCITY = { 3: 104, 2: 80, 1: 60 };
 const RATTLE_VELOCITY = { 3: 82, 2: 70, 1: 60 };
 const DRUM_TAIL_BARS = 1;
 
-const weightOf = (u, unitsPerBar) =>
-  u % unitsPerBar === 0 ? 3 : u % 2 === 0 ? 2 : 1;
+/* Downbeat, beat, offbeat -- read off the meter rather than off a literal, so
+   changing the unit moves the accent with it. */
+const weightOf = (u, meter) =>
+  u % meter.unitsPerMeasure === 0 ? 3 : u % meter.UNITS_PER_BEAT === 0 ? 2 : 1;
 
 /* The motif's durations are a rhythm cell. Augmented, its cycle rarely divides
    the bar, so it phases against it. */
@@ -64,18 +65,18 @@ export function reduce(notes, units, unitS) {
 
 /* Strong empty slots inside the span the tune occupies: hits land where the
    tune is not, so the drum answers rather than doubles. */
-export function hocket(tune, unitsPerBar, density) {
+export function hocket(tune, meter, density) {
   const first = tune.findIndex((v) => v);
   const out = new Array(tune.length).fill(0);
   if (first < 0) return out;
   let last = 0;
   tune.forEach((v, u) => { if (v) last = u; });
-  const end = Math.min(tune.length, last + DRUM_TAIL_BARS * unitsPerBar);
+  const end = Math.min(tune.length, last + DRUM_TAIL_BARS * meter.unitsPerMeasure);
   const empty = [];
   for (let u = first; u < end; u++) if (!tune[u]) empty.push(u);
-  empty.sort((a, b) => weightOf(b, unitsPerBar) - weightOf(a, unitsPerBar) || a - b);
-  for (const u of empty.slice(0, Math.round(empty.length * density))) {
-    out[u] = weightOf(u, unitsPerBar);
+  empty.sort((a, b) => weightOf(b, meter) - weightOf(a, meter) || a - b);
+  for (const u of empty.slice(0, round(empty.length * density))) {
+    out[u] = weightOf(u, meter);
   }
   return out;
 }
@@ -91,14 +92,13 @@ export function rhythm({ motif, notes, meter, lengthS, inhaleS, clock,
                          drum, rattle, drumDensity, rattleScale,
                          drumPool = DRUM_POOL, rattlePool = RATTLE_POOL }) {
   const unitS = meter.unitS;
-  const unitsPerBar = meter.unitsPerMeasure;
   const units = Math.max(1, round(lengthS / unitS));
   const out = { drum: [], rattle: [] };
 
   if (drum) {
     const strokes = DRUM_STROKES[drumPool];
     if (!strokes) throw new Error(`no drum stroke map for pool ${drumPool}`);
-    hocket(reduce(notes, units, unitS), unitsPerBar, drumDensity)
+    hocket(reduce(notes, units, unitS), meter, drumDensity)
       .forEach((w, u) => {
         if (!w) return;
         out.drum.push({ startS: u * unitS, velocity: DRUM_VELOCITY[w],
@@ -114,7 +114,7 @@ export function rhythm({ motif, notes, meter, lengthS, inhaleS, clock,
     let n = 0;
     for (let u = 0; u < total; u++) {
       if (!cell.onsets.includes((clock + u) % cell.length)) continue;
-      const w = weightOf(u, unitsPerBar);
+      const w = weightOf(u, meter);
       out.rattle.push({ startS: u * unitS, velocity: RATTLE_VELOCITY[w],
                         stroke: strokes[n++ % strokes.length] });
     }

@@ -25,38 +25,23 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dsp import (load_mono, note_from_filename, nominal_hz, detect_f0,
-                 envelope_hop, rms_envelope, steady_region)
+                 envelope_hop, rms_envelope, riff_chunks, steady_region)
 
 
 def read_smpl_loops(path):
-    """Return [(start, end), ...] from the WAV `smpl` chunk, or [] if absent.
-
-    scipy does not expose this chunk, so parse the RIFF container directly.
-    """
-    with open(path, 'rb') as fh:
-        if fh.read(4) != b'RIFF':
-            return []
-        fh.read(4)
-        if fh.read(4) != b'WAVE':
-            return []
-        loops = []
-        while True:
-            hdr = fh.read(8)
-            if len(hdr) < 8:
+    """Return [(start, end), ...] from the WAV `smpl` chunk, or [] if absent."""
+    loops = []
+    for cid, body in riff_chunks(path):
+        if cid != b'smpl' or len(body) < 36:
+            continue
+        n = struct.unpack('<I', body[28:32])[0]
+        for i in range(n):
+            off = 36 + i * 24
+            if off + 24 > len(body):
                 break
-            cid, size = struct.unpack('<4sI', hdr)
-            body = fh.read(size)
-            if cid == b'smpl' and len(body) >= 36:
-                n = struct.unpack('<I', body[28:32])[0]
-                for i in range(n):
-                    off = 36 + i * 24
-                    if off + 24 > len(body):
-                        break
-                    start, end = struct.unpack('<II', body[off + 8:off + 16])
-                    loops.append((start, end))
-            if size % 2:
-                fh.read(1)
-        return loops
+            start, end = struct.unpack('<II', body[off + 8:off + 16])
+            loops.append((start, end))
+    return loops
 
 
 def score(sig, sr, start, end, f0):

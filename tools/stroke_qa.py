@@ -28,7 +28,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from dsp import body_level, load_mono
+from dsp import body_level, load_mono, riff_chunks
 
 SAMPLE_RATE = 48000
 MAX_PEAK = 0.95
@@ -46,23 +46,15 @@ ENDING_MIN_S = 0.5
 
 def container(path):
     """(channels, sample_rate, has_smpl) straight from the RIFF chunk table."""
-    with open(path, "rb") as fh:
-        data = fh.read()
-    if data[0:4] != b"RIFF" or data[8:12] != b"WAVE":
-        raise ValueError(f"{path} is not a RIFF/WAVE file")
     channels = rate = None
     has_smpl = False
-    pos = 12
-    while pos + 8 <= len(data):
-        cid = data[pos:pos + 4]
-        size = struct.unpack("<I", data[pos + 4:pos + 8])[0]
+    for cid, body in riff_chunks(path):
         if cid == b"fmt ":
-            _, channels, rate = struct.unpack("<HHI", data[pos + 8:pos + 16])
+            _, channels, rate = struct.unpack("<HHI", body[:8])
         elif cid == b"smpl":
             has_smpl = True
-        pos += 8 + size + (size % 2)
     if channels is None:
-        raise ValueError(f"{path} has no fmt chunk")
+        raise ValueError(f"{path} has no fmt chunk, or is not a RIFF/WAVE file")
     return channels, rate, has_smpl
 
 

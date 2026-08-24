@@ -39,9 +39,11 @@ const MAKEUP = INSTRUMENT.makeupGain;
 const ampFor = (velocity, gain) => Math.pow(velocity / 127, 1.4) * gain;
 
 // the graph, built once
-let master = null, tone = null, limiter = null;
-let convolver = null, preDelay = null, reverbIn = null, reverbReturn = null;
-let delayNode = null, delayIn = null, delayReturn = null, feedback = null, fbTone = null;
+// Only the nodes an effect control reaches live out here; the rest are locals
+// of `buildGraph`, which is the only thing that touches them.
+let master = null, tone = null;
+let convolver = null, preDelay = null, reverbReturn = null;
+let delayNode = null, delayReturn = null, feedback = null, fbTone = null;
 let bus = {};                 // channel name -> {input, sends: {reverb, delay}}
 
 const LABELS = {
@@ -143,7 +145,7 @@ function urlFor(path) {
    darkens the whole mix, tails included. */
 
 function buildGraph() {
-  limiter = ctx.createDynamicsCompressor();
+  const limiter = ctx.createDynamicsCompressor();
   limiter.threshold.value = -3;
   limiter.knee.value = 0;
   limiter.ratio.value = 20;
@@ -162,7 +164,7 @@ function buildGraph() {
   master.connect(tone);
 
   // --- reverb return
-  reverbIn = ctx.createGain();
+  const reverbIn = ctx.createGain();
   preDelay = ctx.createDelay(0.5);
   preDelay.delayTime.value = parseFloat($("predelay").value) / 1000;
   convolver = ctx.createConvolver();
@@ -174,7 +176,7 @@ function buildGraph() {
 
   // --- delay return. The feedback path is legal because a DelayNode sits in
   // the loop; the filter in it is what makes each repeat darker than the last.
-  delayIn = ctx.createGain();
+  const delayIn = ctx.createGain();
   // Sixteen sixteenths at the slowest tempo the engine allows is six seconds,
   // so the line has to be able to hold that much.
   delayNode = ctx.createDelay(7.0);
@@ -243,10 +245,19 @@ async function fetchRaw(path) {
 }
 
 /* Only what is not already decoded, so switching a pool fetches that pool and
-   nothing else. */
-async function loadStrokes(paths) {
-  await Promise.all(paths.filter((p) => !(p in strokes)).map(async (path) => {
-    strokes[path] = await ctx.decodeAudioData(await fetchRaw(path));
+   nothing else. The promise is what is remembered rather than the buffer: a
+   second submit while the first is still loading would otherwise re-fetch and
+   re-decode everything it had not finished yet. */
+const decoding = {};
+function loadStrokes(paths) {
+  return Promise.all(paths.map((path) => {
+    if (path in strokes) return strokes[path];
+    if (!(path in decoding)) {
+      decoding[path] = fetchRaw(path)
+        .then((raw) => ctx.decodeAudioData(raw))
+        .then((buf) => (strokes[path] = buf));
+    }
+    return decoding[path];
   }));
 }
 
@@ -561,14 +572,11 @@ function describe() {
     $("octave-row").insertBefore(
       stepper((by) => nudge(working, "lead_octave", by, inst.ranges.lead_octave)),
       $("lead_octave"));
-    $("song").addEventListener("change", () => {
-      working.song = $("song").checked; renderParams();
-    });
     for (const name of ["song_blocks", "song_repeats"]) {
       $(`${name}-row`).insertBefore(
         stepper((by) => nudge(working, name, by, inst.ranges[name])), $(name));
     }
-    for (const name of ["drum", "rattle", "wash"]) {
+    for (const name of ["song", "drum", "rattle", "wash"]) {
       $(name).addEventListener("change", () => {
         working[name] = $(name).checked; renderParams();
       });
@@ -633,8 +641,9 @@ function renderParams() {
     oct > 0 ? `+${oct}` : String(oct).replace("-", "\u2212");
   ends($("octave-row"), oct, inst.ranges.lead_octave);
   if (document.activeElement !== $("seed")) $("seed").value = working.seed;
-  $("song").checked = working.song === true;
-  for (const name of ["drum", "rattle", "wash"]) $(name).checked = working[name] === true;
+  for (const name of ["song", "drum", "rattle", "wash"]) {
+    $(name).checked = working[name] === true;
+  }
   for (const field of ["drum_pool", "rattle_pool"]) $(field).value = working[field];
   $("drum_pool").disabled = !working.drum;
   $("rattle_pool").disabled = !working.rattle;
@@ -697,11 +706,9 @@ async function submit() {
   try {
     // Before the set is applied, not after: the scheduler may ask for a breath
     // the moment `update` returns, and a strike with no buffer is an error.
-    const wanted = [];
-    if (pending.drum) wanted.push(pending.drum_pool);
-    if (pending.rattle) wanted.push(pending.rattle_pool);
-    if (pending.wash) wanted.push(inst.pools.wash);
-    if (ctx) await loadStrokes(engine.poolFiles(wanted));
+    // The engine answers what the pending set needs, so the layer-to-pool rule
+    // is not written out a second time here.
+    if (ctx) await loadStrokes(engine.strokeFiles(pending));
     inst = engine.update(pending);
   } catch (err) {
     note(`refused: ${err.message}`);
@@ -762,47 +769,51 @@ for (const tab of document.querySelectorAll(".tab")) {
 
 /* ---------- mixer ---------- */
 
-/* One control in the grid. `level` folds in the makeup gain the channel needs;
-   a send is the value as it reads. */
-function mixCell(row, name, field, max) {
-  const id = `${name}-${field}`;
-  const label = document.createElement("label");
-  label.htmlFor = id;
-  label.className = "sr";
-  label.textContent = `${MIX[name].label} ${field}`;
-  const input = document.createElement("input");
-  Object.assign(input, {type: "range", id, min: 0, max, step: 0.01,
-                        value: MIX[name][field]});
-  const out = document.createElement("output");
-  const show = () => { out.textContent = Number(input.value).toFixed(2); };
-  input.addEventListener("input", () => {
-    show();
-    if (!master) return;
-    const param = field === "level" ? bus[name].input.gain : bus[name].sends[field].gain;
-    const value = field === "level" ? channelGain(name) : parseFloat(input.value);
-    param.setTargetAtTime(value, ctx.currentTime, 0.02);
-  });
-  show();
-  row.append(label, input, out);
+// A strip is a level and one send per effect, in that order.
+const MIX_FIELDS = ["level", ...SENDS];
+// A level can be pushed past unity; a send is a fraction of the channel.
+const mixMax = (field) => (field === "level" ? 1.5 : 1);
+
+function mixStrip(name) {
+  const row = document.createElement("div");
+  row.className = "mixrow";
+  const title = document.createElement("span");
+  title.className = "mixname";
+  title.textContent = MIX[name].label;
+  row.appendChild(title);
+  for (const field of MIX_FIELDS) {
+    const id = `${name}-${field}`;
+    const label = document.createElement("label");
+    label.htmlFor = id;
+    label.className = "sr";
+    label.textContent = `${MIX[name].label} ${field}`;
+    const input = document.createElement("input");
+    Object.assign(input, {type: "range", id, min: 0, max: mixMax(field),
+                          step: 0.01, value: MIX[name][field]});
+    const out = document.createElement("output");
+    out.id = `${id}-out`;
+    row.append(label, input, out);
+  }
+  return row;
 }
 
 /* Built from MIX rather than written out, so a channel cannot exist in the
-   graph without a strip to move it. */
+   graph without a strip to move it. The strips go into the document first and
+   are wired second, because `bind` finds its control by id. */
 function buildMixer() {
   const grid = $("mixer");
+  for (const name of CHANNELS) grid.appendChild(mixStrip(name));
   for (const name of CHANNELS) {
-    const row = document.createElement("div");
-    row.className = "mixrow";
-    const label = document.createElement("span");
-    label.className = "mixname";
-    label.textContent = MIX[name].label;
-    row.appendChild(label);
-    mixCell(row, name, "level", 1.5);
-    for (const send of SENDS) mixCell(row, name, send, 1);
-    grid.appendChild(row);
+    for (const field of MIX_FIELDS) {
+      bind(`${name}-${field}`, (v) => {
+        const param = field === "level" ? bus[name].input.gain
+                                        : bus[name].sends[field].gain;
+        param.setTargetAtTime(field === "level" ? channelGain(name) : v,
+                              ctx.currentTime, 0.02);
+      }, (v) => v.toFixed(2));
+    }
   }
 }
-buildMixer();
 
 // Audio controls are ours and need no round trip, so they move while it sounds.
 const setRoom = {};       // id -> set the slider and apply it, without a gesture
@@ -817,6 +828,7 @@ const bind = (id, fn, fmt, onRelease = false) => {
   show();
   setRoom[id] = (v) => { el.value = v; show(); apply(); };
 };
+buildMixer();
 bind("master", (v) => master.gain.setTargetAtTime(v, ctx.currentTime, 0.02),
      (v) => v.toFixed(2));
 bind("verb", (v) => reverbReturn.gain.setTargetAtTime(v, ctx.currentTime, 0.02),

@@ -24,22 +24,22 @@ import * as scales from "./scales.js";
 const PRESETS = {
   "contemplative": { notes_per_breath: 4, step_leap_ratio: 0.80, ornament_rate: 0.10,
     cadence_strength: 0.70, register_bias: 0.0,
-    breath_mean_s: 8.0, call_response: 0.55, bpm: 72, phrase_shape: [3.0, 3.0] , drum_density: 0.4, rattle_scale: 3, wash_rate: 0.15 },
+    breath_mean_s: 8.0, call_response: 0.55, bpm: 72, phrase_shape: [3.0, 3.0], drum_density: 0.4, rattle_scale: 3, wash_rate: 0.15 },
   "mourning": { notes_per_breath: 3, step_leap_ratio: 0.85, ornament_rate: 0.15,
     cadence_strength: 0.85, register_bias: -0.2,
-    breath_mean_s: 9.0, call_response: 0.65, bpm: 56, phrase_shape: [2.0, 4.0] , drum_density: 0.3, rattle_scale: 3, wash_rate: 0.2 },
+    breath_mean_s: 9.0, call_response: 0.65, bpm: 56, phrase_shape: [2.0, 4.0], drum_density: 0.3, rattle_scale: 3, wash_rate: 0.2 },
   "pastoral": { notes_per_breath: 6, step_leap_ratio: 0.70, ornament_rate: 0.20,
     cadence_strength: 0.55, register_bias: 0.1,
-    breath_mean_s: 7.0, call_response: 0.50, bpm: 88, phrase_shape: [3.0, 3.0] , drum_density: 0.45, rattle_scale: 2, wash_rate: 0.1 },
+    breath_mean_s: 7.0, call_response: 0.50, bpm: 88, phrase_shape: [3.0, 3.0], drum_density: 0.45, rattle_scale: 2, wash_rate: 0.1 },
   "ceremonial": { notes_per_breath: 5, step_leap_ratio: 0.60, ornament_rate: 0.15,
     cadence_strength: 0.75, register_bias: 0.2,
-    breath_mean_s: 7.5, call_response: 0.75, bpm: 66, phrase_shape: [4.0, 2.0] , drum_density: 0.55, rattle_scale: 2, wash_rate: 0.12 },
+    breath_mean_s: 7.5, call_response: 0.75, bpm: 66, phrase_shape: [4.0, 2.0], drum_density: 0.55, rattle_scale: 2, wash_rate: 0.12 },
   "restless": { notes_per_breath: 11, step_leap_ratio: 0.45, ornament_rate: 0.40,
     cadence_strength: 0.25, register_bias: 0.4,
-    breath_mean_s: 5.0, call_response: 0.35, bpm: 120, phrase_shape: [2.0, 2.0] , drum_density: 0.35, rattle_scale: 2, wash_rate: 0.05 },
+    breath_mean_s: 5.0, call_response: 0.35, bpm: 120, phrase_shape: [2.0, 2.0], drum_density: 0.35, rattle_scale: 2, wash_rate: 0.05 },
   "sleep": { notes_per_breath: 2, step_leap_ratio: 0.92, ornament_rate: 0.02,
     cadence_strength: 0.90, register_bias: -0.3,
-    breath_mean_s: 11.0, call_response: 0.30, bpm: 48, phrase_shape: [2.0, 4.0] , drum_density: 0.25, rattle_scale: 4, wash_rate: 0.25 },
+    breath_mean_s: 11.0, call_response: 0.30, bpm: 48, phrase_shape: [2.0, 4.0], drum_density: 0.25, rattle_scale: 4, wash_rate: 0.25 },
 };
 
 export const MOODS = Object.fromEntries(
@@ -81,10 +81,14 @@ export const NUMERIC_PARAMS = {
 // What counts as the mood, in its order. `breath_mean_s` and `bpm` are among
 // them, so the breath panel owns only spread and inhale -- two controls writing
 // one value would make it ambiguous which one won.
-export const MOOD_WEIGHTS = ["notes_per_breath", "step_leap_ratio",
+// What counts as the mood, in two groups: the ones that shape the tune, and
+// the ones that shape the percussion. The page renders them in separate
+// places, so the split is the primary thing and the whole set is the join.
+export const WEIGHT_FIELDS = ["notes_per_breath", "step_leap_ratio",
   "ornament_rate", "cadence_strength", "register_bias",
-  "call_response", "bpm", "breath_mean_s",
-  "drum_density", "rattle_scale", "wash_rate"];
+  "call_response", "bpm", "breath_mean_s"];
+export const RHYTHM_FIELDS = ["drum_density", "rattle_scale", "wash_rate"];
+export const MOOD_WEIGHTS = [...WEIGHT_FIELDS, ...RHYTHM_FIELDS];
 
 // The parameters the head row gives their own control -- a menu, a text box, a
 // stepper. Some are numeric all the same: `lead_octave` has a range like any
@@ -94,18 +98,13 @@ export const CHOICE_PARAMS = ["mood", "key", "mode", "seed", "lead_octave",
                               "drum", "rattle", "wash",
                               "drum_pool", "rattle_pool"];
 
-// Mood weights, but shown with the rhythm controls rather than among the ones
-// that shape the tune.
-export const RHYTHM_FIELDS = ["drum_density", "rattle_scale", "wash_rate"];
-export const WEIGHT_FIELDS = MOOD_WEIGHTS.filter((w) => !RHYTHM_FIELDS.includes(w));
 
 // The numeric parameters left over: not a mood weight, not on a menu. Derived
 // rather than restated, so a new parameter cannot go missing from the page --
 // but it does mean a numeric parameter belongs on a menu or in this block, and
 // nowhere else.
 export const BREATH_FIELDS = Object.keys(NUMERIC_PARAMS).filter(
-  (k) => !MOOD_WEIGHTS.includes(k) && !CHOICE_PARAMS.includes(k)
-      && !RHYTHM_FIELDS.includes(k));
+  (k) => !MOOD_WEIGHTS.includes(k) && !CHOICE_PARAMS.includes(k));
 
 // Three drone voices, each an optional semitone offset from the tonic. Two
 // octaves either way is deliberately wide: a drone far below the lead is the

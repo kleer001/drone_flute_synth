@@ -11,8 +11,8 @@ import { SampleSet } from "./samples.js";
 import { INSTRUMENT } from "./profile.js";
 import * as moods from "./moods.js";
 import * as scales from "./scales.js";
-import { rhythm, cycleUnits, washStroke, DRUM_POOL, RATTLE_POOL, WASH_POOL,
-         DRUM_POOLS, RATTLE_POOLS, WASH_POOLS,
+import { rhythm, cycleUnits, washStroke,
+         DRUM_POOL, RATTLE_POOL, WASH_POOL, DRUM_POOLS, RATTLE_POOLS,
          WASH_MIN_GAP, WASH_VELOCITY } from "./percussion.js";
 
 // The drone sits under the lead rather than beside it.
@@ -97,57 +97,31 @@ export class Instrument {
     return [...new Set(Object.values(this.voices).map((v) => v.file))];
   }
 
-  /* The pools the rhythm layers are currently set to. */
-  get pools() {
-    return { drum: this.params.drum_pool, rattle: this.params.rattle_pool,
-             wash: WASH_POOL };
-  }
-
   /* Which pools each layer could be set to: known to the stroke tables, and
-     actually authored in this manifest. */
+     actually authored in this manifest. The wash is not among them -- it has
+     one pool and no control, so offering a choice nothing can make would be a
+     menu with no consumer. */
   get poolChoices() {
     const have = (names) => names.filter((n) => n in this.percussion);
-    return { drum_pool: have(DRUM_POOLS), rattle_pool: have(RATTLE_POOLS),
-             wash_pool: have(WASH_POOLS) };
+    return { drum_pool: have(DRUM_POOLS), rattle_pool: have(RATTLE_POOLS) };
   }
 
-  /* Every file the layers that are switched on can reach. Switching a layer
-     on or changing its pool changes this, so the page fetches what a submitted
-     set needs before applying it rather than loading every pool up front. */
-  strokeFiles() {
-    const p = this.params;
+  /* Every file the layers that are switched on can reach. Takes a parameter
+     set so the page can ask what a *submitted* one will need and fetch it
+     before applying it, rather than deriving the layer-to-pool rule a second
+     time for itself. */
+  strokeFiles(p = this.params) {
     const want = [];
     if (p.drum === true) want.push(p.drum_pool);
     if (p.rattle === true) want.push(p.rattle_pool);
     if (p.wash === true) want.push(WASH_POOL);
-    return this.poolFiles(want);
-  }
-
-  poolFiles(names) {
     const out = new Set();
-    for (const name of names) {
+    for (const name of want) {
       const pool = this.percussion[name];
       if (!pool) continue;
       for (const f of pool.files()) out.add(f);
     }
     return [...out].sort();
-  }
-
-  /* One recording of a stroke: {path, stroke, level}.
-   *
-   * The pool decides which force layer and which variation, because that is a
-   * fact about what was recorded; this only supplies the stream it draws
-   * from. */
-  strike(pool, stroke, velocity) {
-    const set = this.percussion[pool];
-    if (!set) {
-      const have = Object.keys(this.percussion).sort().join(", ") || "none";
-      throw new Error(`no percussion pool ${pool}; have ${have}`);
-    }
-    const key = `${pool}|${stroke}`;
-    const hit = set.pick(stroke, velocity, this._strikes, this._lastTake.get(key));
-    this._lastTake.set(key, hit.path);
-    return hit;
   }
 
   /* [lead note names, drone note names, tonic] for the current key and mode. */
@@ -210,7 +184,7 @@ export class Instrument {
     // Which pools exist is a fact about the manifest, so it is checked here
     // rather than in `moods`, which has never seen one.
     const choices = this.poolChoices;
-    for (const field of ["drum_pool", "rattle_pool"]) {
+    for (const field of Object.keys(choices)) {
       if (!choices[field].includes(merged[field])) {
         errors[field] = `must be one of ${choices[field].join(", ") || "none authored"}`;
       }
@@ -236,11 +210,9 @@ export class Instrument {
       sampleNote: INSTRUMENT.sampleNote,
       params: structuredClone(this.params),
       ranges: moods.NUMERIC_PARAMS,
-      mood_weights: moods.MOOD_WEIGHTS,
       breath_fields: moods.BREATH_FIELDS,
       rhythm_fields: moods.RHYTHM_FIELDS,
       weight_fields: moods.WEIGHT_FIELDS,
-      pools: this.pools,
       pool_choices: this.poolChoices,
       moods: Object.keys(moods.MOODS).sort(),
       preset_weights: moods.presetWeights(),
@@ -249,13 +221,9 @@ export class Instrument {
       drone_slots: moods.DRONE_SLOTS,
       drone_semitones: moods.DRONE_SEMITONES,
       meter: { bpm: meter.bpm, beats_per_measure: meter.beatsPerMeasure,
-               beat_s: meter.beatS, measure_s: meter.measureS },
+               beat_s: meter.beatS, measure_s: meter.measureS,
+               unit_s: meter.unitS },
       voices: this.voices,
-      // What was recorded for each pool: its strokes, the force layers each
-      // was captured at, and how many variations back a layer. The page needs
-      // this to build a control before it has loaded a single sample.
-      percussion: Object.fromEntries(Object.entries(this.percussion)
-        .map(([name, pool]) => [name, pool.describe()])),
       // The breath envelope belongs to the breath, not to the page, so the
       // numbers come from there rather than being restated in the audio graph.
       attack_s: BREATH_ATTACK_S,
@@ -314,8 +282,22 @@ export class Instrument {
     return [{ startS: 0, stroke: washStroke(WASH_POOL), velocity: WASH_VELOCITY }];
   }
 
+  /* One planned hit, given the recording that will sound it.
+   *
+   * The pool decides which force layer and which variation, because that is a
+   * fact about what was recorded; this supplies the stream it draws from and
+   * remembers what it used last, because where a round robin has got to is a
+   * fact about this performance. */
   _voiceStrike(pool, hit) {
-    const { path, gain } = this.strike(pool, hit.stroke, hit.velocity);
+    const set = this.percussion[pool];
+    if (!set) {
+      const have = Object.keys(this.percussion).sort().join(", ") || "none";
+      throw new Error(`no percussion pool ${pool}; have ${have}`);
+    }
+    const key = `${pool}|${hit.stroke}`;
+    const { path, gain } = set.pick(hit.stroke, hit.velocity, this._strikes,
+                                    this._lastTake.get(key));
+    this._lastTake.set(key, path);
     return { start_s: hit.startS, stroke: hit.stroke,
              velocity: hit.velocity, file: path, gain };
   }

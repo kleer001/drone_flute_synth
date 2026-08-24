@@ -13,6 +13,8 @@ import os
 import re
 import warnings
 
+import struct
+
 import numpy as np
 from scipy.io import wavfile
 from scipy.io.wavfile import WavFileWarning
@@ -130,3 +132,25 @@ def body_level(sig, sr, ms=50.0):
     energy = np.concatenate([[0.0], np.cumsum(sig.astype(np.float64) ** 2)])
     return float(np.sqrt(((energy[n:] - energy[:-n]) / n).max())
 )
+
+
+def riff_chunks(path):
+    """Yield (chunk_id, body) for every chunk of a RIFF/WAVE file, or nothing
+    if it is not one.
+
+    scipy exposes `fmt ` and `data` and drops the rest, so anything a sample
+    carries about itself -- loop points, above all -- has to be read from the
+    container. Walking the chunk table properly rather than searching for the
+    four bytes matters: "smpl" can occur inside sample data, and a false hit
+    would be read as a loop.
+    """
+    with open(path, "rb") as fh:
+        data = fh.read()
+    if data[0:4] != b"RIFF" or data[8:12] != b"WAVE":
+        return
+    pos = 12
+    while pos + 8 <= len(data):
+        cid = data[pos:pos + 4]
+        size = struct.unpack("<I", data[pos + 4:pos + 8])[0]
+        yield cid, data[pos + 8:pos + 8 + size]
+        pos += 8 + size + (size % 2)

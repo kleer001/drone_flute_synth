@@ -31,7 +31,7 @@ from scipy.io import wavfile
 from scipy.signal import butter, resample_poly, sosfiltfilt
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from dsp import load_mono
+from dsp import body_level, load_mono
 
 # The loops are 48k mono; matching them means the page decodes one rate.
 SAMPLE_RATE = 48000
@@ -46,10 +46,14 @@ FADE_OUT_S = 0.012
 # away, so it is still at full level when the file ends. The ocean drum is cut
 # at 8 s while measuring 0.89-3.7x its own body level; a 12 ms fade on that is
 # an edge, and it is heard as a click. Long enough to read as the gesture
-# ending instead. The fade-in matters for the same reason: a wash that switches
-# on in 1 ms ticks, where a struck sound's 1 ms IS the attack.
+# ending instead.
 CUT_FADE_OUT_S = 0.80
-CUT_FADE_IN_S = 0.05
+# The fade-in answers a different question. Truncating a tail says nothing
+# about an attack: a wash that switches on in 1 ms ticks, where a struck
+# sound's 1 ms IS the attack. So it follows `sustain` on the pool, not the
+# length cap -- otherwise shortening any `max_s` would quietly soften a
+# transient the recording is made of.
+SUSTAIN_FADE_IN_S = 0.05
 # Subsonic trim. Several of VCSL's shortest shaker recordings carry a DC
 # offset of a couple of thousandths -- harmless in a long sustain, but these
 # are 80 ms bursts, so the offset arrives as a step and is heard as a thump on
@@ -110,11 +114,12 @@ POOLS = {
     # The ocean drum is the rain stick's stand-in: VCSL has no rain stick, and
     # a shallow drum full of beads is the same gesture -- a wash of grains that
     # rises and falls as it is tilted. Its recordings are `Sus`, long and
-    # continuous, so they are capped rather than trimmed.
+    # continuous, so they are capped rather than trimmed, and they swell in
+    # rather than switching on.
     "rain_stick": dict(
         source="Membranophones/Other Membranophones/Ocean Drum",
         rules=[(r"OceanDrum_Sus_(?P<variant>\d+)_Mid\.wav", {"": "wash"})],
-        max_s=8.0,
+        max_s=8.0, sustain=True,
     ),
 }
 
@@ -139,7 +144,7 @@ def classify(name, rules):
     return None
 
 
-def prepare(path, max_s):
+def prepare(path, max_s, sustain=False):
     """Mono, trimmed to the sound, resampled, faded. Returns float64 in [-1, 1]."""
     sr, sig = load_mono(path)
     # Before trimming, so the trim sees where the sound actually starts rather
@@ -163,7 +168,7 @@ def prepare(path, max_s):
     # A trim lands mid-waveform, and a step to zero is a click. These are the
     # shortest fades that remove it without softening the transient -- unless
     # the sound was cut rather than allowed to end, which needs a real fade.
-    fade_in = CUT_FADE_IN_S if cut else FADE_IN_S
+    fade_in = SUSTAIN_FADE_IN_S if sustain else FADE_IN_S
     fade_out = CUT_FADE_OUT_S if cut else FADE_OUT_S
     n_in = min(int(fade_in * SAMPLE_RATE), sig.size // 2)
     n_out = min(int(fade_out * SAMPLE_RATE), sig.size // 2)
@@ -190,7 +195,8 @@ def author_pool(name, spec, vcsl_root, out_dir):
     if not found:
         raise SystemExit(f"{name}: no recording in {src} matched a rule")
 
-    signals = [prepare(os.path.join(src, f), spec["max_s"]) for f, _, _, _ in found]
+    signals = [prepare(os.path.join(src, f), spec["max_s"], spec.get("sustain", False))
+               for f, _, _, _ in found]
 
     # ONE factor for the whole pool. Normalising each file to its own peak
     # would erase precisely what the velocity layers encode -- a soft hit and a
@@ -201,30 +207,31 @@ def author_pool(name, spec, vcsl_root, out_dir):
         raise SystemExit(f"{name}: every recording is silent")
     scale = PEAK / peak
 
-    written = 0
+    # The spread between the softest and loudest layer of a stroke, in dB.
+    # This is what a velocity layer is worth: two layers far apart mean the
+    # midpoint of the velocity range is a cliff, not a ramp. Measured as body
+    # rather than peak, because that is what the engine levels by and what the
+    # gate checks -- reporting peak here said 19 dB for the frame drum where
+    # every other number in the project says 15.
+    by_stroke = {}
     for (fname, stroke, level, variant), sig in zip(found, signals):
         out = f"{name}-{stroke}-l{level}-v{variant}.wav"
         data = np.clip(sig * scale, -1.0, 1.0)
         wavfile.write(os.path.join(out_dir, out),
                       SAMPLE_RATE, (data * 32767.0).astype(np.int16))
-        written += 1
-    # The spread between the softest and loudest layer of a stroke, in dB.
-    # This is what a velocity layer is worth: two layers 20 dB apart mean the
-    # midpoint of the velocity range is a cliff, not a ramp.
-    by_stroke = {}
-    for (_, stroke, level, _), sig in zip(found, signals):
-        by_stroke.setdefault(stroke, {}).setdefault(level, []).append(
-            float(np.abs(sig).max()))
+        body = body_level(sig, SAMPLE_RATE)
+        layers = by_stroke.setdefault(stroke, {})
+        layers[level] = max(layers.get(level, 0.0), body)
+
     spread = []
     for stroke in sorted(by_stroke):
-        peaks = {lv: max(v) for lv, v in by_stroke[stroke].items()}
-        if len(peaks) > 1:
-            lo, hi = min(peaks.values()), max(peaks.values())
-            spread.append(f"{stroke} {20 * np.log10(hi / lo):.0f}dB")
+        bodies = by_stroke[stroke].values()
+        if len(by_stroke[stroke]) > 1:
+            spread.append(f"{stroke} {20 * np.log10(max(bodies) / min(bodies)):.0f}dB")
     note = f"  layers: {', '.join(spread)}" if spread else ""
-    print(f"{name:18s} {written:3d} files  peak {peak:.3f} -> {PEAK}  "
+    print(f"{name:18s} {len(found):3d} files  peak {peak:.3f} -> {PEAK}  "
           f"strokes: {', '.join(sorted(by_stroke))}{note}")
-    return written
+    return len(found)
 
 
 def main():

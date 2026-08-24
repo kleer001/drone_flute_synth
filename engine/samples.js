@@ -27,7 +27,7 @@ export const LOOP_SUFFIX = "_loop.wav";
 
 // The manifest describes every pool the page can load. It is generated from
 // the directories, so a bump here means `tools/manifest.py` moved too.
-export const MANIFEST_VERSION = 2;
+const MANIFEST_VERSION = 2;
 
 /* What the WAV container says about itself: its rate, and its loop points if
  * it has any.
@@ -44,7 +44,7 @@ export const MANIFEST_VERSION = 2;
  * as `loop: null` rather than as an error. Whether that is a problem is the
  * caller's question, and `readLoopPoints` below is the caller that says yes.
  */
-export function readSampleInfo(buffer) {
+function readSampleInfo(buffer) {
   const view = new DataView(buffer);
   const tag = (o) => String.fromCharCode(view.getUint8(o), view.getUint8(o + 1),
                                          view.getUint8(o + 2), view.getUint8(o + 3));
@@ -185,6 +185,7 @@ export class StrokeSet {
     this.dir = dir;
 
     this._byStroke = new Map();          // stroke -> level -> [path]
+    this._measured = new Map();          // path -> what the build step measured
     const loudness = new Map();          // path -> body level, dB
     const strokeOf = new Map();          // path -> stroke
     for (const s of samples) {
@@ -203,6 +204,9 @@ export class StrokeSet {
       layers.get(level).push(path);
       loudness.set(path, Number(s.loudness_db));
       strokeOf.set(path, s.stroke);
+      this._measured.set(path, { stroke: s.stroke, level,
+                                 loudnessDb: Number(s.loudness_db),
+                                 peak: Number(s.peak) });
     }
     // Sorted, so which variation a seed reaches does not depend on the order
     // the build step happened to walk the directory in.
@@ -255,6 +259,15 @@ export class StrokeSet {
       gain.set(path, Math.pow(10, (ref.get(strokeOf.get(path)) - db) / 20));
     }
     return gain;
+  }
+
+  /* What the build step measured for one recording: its body level and its
+     peak. Held here so nothing else has to open the manifest a second way to
+     find out how loud a recording is. */
+  measured(path) {
+    const m = this._measured.get(path);
+    if (m === undefined) throw new Error(`pool ${this.name}: no recording ${path}`);
+    return m;
   }
 
   /* The levelling gain for one recording. */
@@ -318,16 +331,4 @@ export class StrokeSet {
     return { path, stroke, level, gain: this.gainFor(path) };
   }
 
-  /* What the page needs to know about this pool without loading it. */
-  describe() {
-    const strokes = {};
-    for (const s of this.strokes) {
-      strokes[s] = this.levels(s).map((l) => ({
-        level: l,
-        variants: this._byStroke.get(s).get(l).map((path) => ({
-          path, gain: this.gainFor(path) })),
-      }));
-    }
-    return { name: this.name, dir: this.dir, strokes };
-  }
 }
