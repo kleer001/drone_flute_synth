@@ -32,13 +32,10 @@
     <div class="rows" id="head">
       <div class="param"><label for="mood">mood</label>
         <select id="mood"></select><output></output></div>
-      <div class="param"><label for="key">key</label>
-        <select id="key"></select><output></output></div>
-      <div class="param"><label for="mode">scale</label>
-        <select id="mode"></select><output></output></div>
-      <div class="param"><label for="seed">seed</label>
-        <input type="text" id="seed" inputmode="numeric">
-        <button id="reseed" class="link" title="New seed">&#8635;</button></div>
+      <div class="param pair"><label for="key">key &amp; scale</label>
+        <select id="key"></select>
+        <label class="sr" for="mode">scale</label>
+        <select id="mode"></select></div>
     </div>
     <div class="rows" id="song-rows">
       <div class="param" id="song-row">
@@ -65,6 +62,9 @@
     <details class="expert">
       <summary>expert &mdash; how the flute plays</summary>
       <div class="rows">
+        <div class="param"><label for="seed">seed</label>
+          <input type="text" id="seed" inputmode="numeric">
+          <button id="reseed" class="link" title="New seed">&#8635;</button></div>
         <div class="param" id="octave-row"><label>lead octave offset</label>
           <output id="lead_octave"></output></div>
       </div>
@@ -113,8 +113,8 @@
     </div>
     <div class="section">delay</div>
     <div class="rows">
-      <div class="param"><label for="dtime">time</label>
-        <input type="range" id="dtime" min="40" max="1200" step="5" value="375">
+      <div class="param"><label for="dtime">time (16ths)</label>
+        <input type="range" id="dtime" min="1" max="16" step="1" value="3">
         <output id="dtime-out"></output></div>
       <div class="param"><label for="dfeed">feedback</label>
         <input type="range" id="dfeed" min="0" max="0.85" step="0.01" value="0.34">

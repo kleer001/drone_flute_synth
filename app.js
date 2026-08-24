@@ -92,10 +92,14 @@ const MIX = {
 };
 const CHANNELS = Object.keys(MIX);
 
-// Delay defaults: a dotted-eighth-ish time that does not fight the beat, and
-// repeats that darken as they go, which is what keeps a long delay from
-// crowding the tune.
-const DELAY = {time: 375, feedback: 0.34, tone: 3200, level: 0.5};
+/* One sixteenth, in seconds. The delay counts sixteenths rather than
+   milliseconds so it stays in time when the tempo moves -- three of them is a
+   dotted eighth, which lands between the beats instead of doubling them. The
+   tempo belongs to the mood, so this follows a submitted set rather than being
+   fixed when the graph is built. Every effect's own default sits on its
+   control in the markup, which is the one place they are written. */
+const sixteenthS = () => (inst ? inst.meter.beat_s : 60 / 72) / 4;
+const delaySeconds = () => parseFloat($("dtime").value) * sixteenthS();
 
 const $ = (id) => document.getElementById(id);
 
@@ -171,8 +175,10 @@ function buildGraph() {
   // --- delay return. The feedback path is legal because a DelayNode sits in
   // the loop; the filter in it is what makes each repeat darker than the last.
   delayIn = ctx.createGain();
-  delayNode = ctx.createDelay(2.5);
-  delayNode.delayTime.value = parseFloat($("dtime").value) / 1000;
+  // Sixteen sixteenths at the slowest tempo the engine allows is six seconds,
+  // so the line has to be able to hold that much.
+  delayNode = ctx.createDelay(7.0);
+  delayNode.delayTime.value = delaySeconds();
   fbTone = ctx.createBiquadFilter();
   fbTone.type = "lowpass";
   fbTone.frequency.value = parseFloat($("dtone").value);
@@ -587,6 +593,9 @@ function describe() {
 
   working = structuredClone(inst.params);
   renderParams();
+  // The delay counts sixteenths and a submitted set can move the tempo, so the
+  // line is retimed and its readout redrawn against the new beat.
+  setRoom.dtime(parseFloat($("dtime").value));
   $("meter").textContent =
     `${inst.meter.bpm} bpm · ${inst.meter.beats_per_measure}/4 · ` +
     `bar ${inst.meter.measure_s.toFixed(2)}s`;
@@ -824,8 +833,11 @@ bind("tone", (v) => tone.frequency.setTargetAtTime(v, ctx.currentTime, 0.05),
      (v) => `${(v / 1000).toFixed(1)} kHz`);
 // The delay time glides rather than jumps: a step in a delay line is a pitch
 // jump in whatever is still sounding in it.
-bind("dtime", (v) => delayNode.delayTime.setTargetAtTime(v / 1000, ctx.currentTime, 0.08),
-     (v) => `${v.toFixed(0)} ms`);
+bind("dtime", () => delayNode.delayTime.setTargetAtTime(delaySeconds(), ctx.currentTime, 0.08),
+     (v) => {
+       const ms = v * sixteenthS() * 1000;
+       return `${v} \u00b7 ${ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`}`;
+     });
 bind("dfeed", (v) => feedback.gain.setTargetAtTime(v, ctx.currentTime, 0.02),
      (v) => v.toFixed(2));
 bind("dtone", (v) => fbTone.frequency.setTargetAtTime(v, ctx.currentTime, 0.05),

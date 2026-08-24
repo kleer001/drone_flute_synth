@@ -47,6 +47,9 @@ h1 { font-size: 1.1rem; font-weight: 600; margin: .8rem 0 .2rem; }
   align-items: center; gap: .5rem; padding: .18rem .5rem; min-height: 1.6rem;
 }
 .param + .param { border-top: 1px solid var(--rule); }
+/* Two menus that are read together: one label, and the width split evenly
+   rather than one of them squeezed into the value column. */
+.param.pair { grid-template-columns: 8.6rem 1fr 1fr; }
 .param label { color: var(--muted); }
 .param output { text-align: right; font-variant-numeric: tabular-nums; }
 select, input[type=text] {
