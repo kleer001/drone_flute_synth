@@ -62,6 +62,16 @@ done
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
+# True only when every folder the build reads is checked out. Testing one of
+# them is not enough: a vendor tree fetched when VCSL_PATHS was shorter is
+# present but short, and the pools it lacks author no strokes at all.
+vcsl_complete() {
+    local path
+    for path in "${VCSL_PATHS[@]}"; do
+        [[ -d "$VCSL/$path" ]] || return 1
+    done
+}
+
 # --- 1. Loops, only if they are missing or you asked -------------------------
 if [[ $REBUILD -eq 1 || -z "$(ls -A "$SITE_LOOPS"/*.wav 2>/dev/null)" \
                        || -z "$(ls -A "$SITE_STROKES"/*.wav 2>/dev/null)" ]]; then
@@ -75,7 +85,7 @@ if [[ $REBUILD -eq 1 || -z "$(ls -A "$SITE_LOOPS"/*.wav 2>/dev/null)" \
         "$PY" -m pip install --quiet -r "$REPO/requirements.txt"
     fi
 
-    if [[ ! -d "$VCSL_SUSTAIN" ]]; then
+    if ! vcsl_complete; then
         say "Fetching VCSL samples (CC0, ~70 MB)"
         mkdir -p "$VENDOR"
         rm -rf "$VCSL"
@@ -83,7 +93,7 @@ if [[ $REBUILD -eq 1 || -z "$(ls -A "$SITE_LOOPS"/*.wav 2>/dev/null)" \
             https://github.com/sgossner/VCSL.git "$VCSL"
         git -C "$VCSL" sparse-checkout set "${VCSL_PATHS[@]}"
     fi
-    [[ -d "$VCSL_SUSTAIN" ]] || { echo "VCSL sustains not found at $VCSL_SUSTAIN" >&2; exit 1; }
+    vcsl_complete || { echo "VCSL samples incomplete under $VCSL" >&2; exit 1; }
 
     say "Authoring drone loops"
     rm -rf "$LOOPS"; mkdir -p "$LOOPS"
