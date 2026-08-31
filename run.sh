@@ -33,6 +33,14 @@ VCSL_SUSTAIN="$VCSL/Aerophones/Edge-blown Aerophones/Baroque Soprano Recorder/Su
 STROKES="$BUILD/strokes"
 SITE_STROKES="$REPO/strokes"
 
+# The upstream commit the published sound is built from. VCSL's samples have
+# not changed since v1.2.2 in May 2018; the three commits after it are two
+# README edits and this one, which adds the LICENSE. Pinned rather than tracking
+# the branch tip because a later commit adding an articulation would not break
+# the build -- it would quietly change what the 13 loops and 52 strokes sound
+# like on the next rebuild.
+VCSL_REF=c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e
+
 # Only the folders the build actually reads. VCSL whole is far larger, and a
 # sparse checkout of these is about 70 MB.
 VCSL_PATHS=(
@@ -89,9 +97,11 @@ if [[ $REBUILD -eq 1 || -z "$(ls -A "$SITE_LOOPS"/*.wav 2>/dev/null)" \
         say "Fetching VCSL samples (CC0, ~70 MB)"
         mkdir -p "$VENDOR"
         rm -rf "$VCSL"
-        git clone --quiet --filter=blob:none --sparse --depth 1 \
-            https://github.com/sgossner/VCSL.git "$VCSL"
+        git init --quiet "$VCSL"
+        git -C "$VCSL" remote add origin https://github.com/sgossner/VCSL.git
+        git -C "$VCSL" fetch --quiet --depth 1 --filter=blob:none origin "$VCSL_REF"
         git -C "$VCSL" sparse-checkout set "${VCSL_PATHS[@]}"
+        git -C "$VCSL" checkout --quiet FETCH_HEAD
     fi
     vcsl_complete || { echo "VCSL samples incomplete under $VCSL" >&2; exit 1; }
 
